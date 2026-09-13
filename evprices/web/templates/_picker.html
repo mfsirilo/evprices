@@ -1,0 +1,59 @@
+{# Seletor de município: UF -> nome (autocomplete) + GPS. Requer #picker-uf, #picker-q, #picker-list. #}
+<div class="card" id="picker">
+  <div class="muted" style="margin-bottom:8px">Escolha o município para levantar os carregadores pagos acima de {{ settings.min_power_kw|num }} kW.</div>
+  <div class="picker">
+    <select id="picker-uf" aria-label="UF">
+      <option value="">UF</option>
+      {% for u in ufs %}<option value="{{ u.sigla }}" {% if mun and mun.uf == u.sigla %}selected{% endif %}>{{ u.sigla }}</option>{% endfor %}
+    </select>
+    <input id="picker-q" list="picker-list" placeholder="Município…" autocomplete="off" inputmode="search" disabled>
+    <datalist id="picker-list"></datalist>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+    <button class="btn" id="picker-go" type="button" disabled>Selecionar</button>
+    <button class="btn ghost" id="picker-gps" type="button">📍 Usar minha localização</button>
+  </div>
+  <div id="locate-result" class="muted"></div>
+</div>
+<script>
+(function () {
+  const uf = document.getElementById('picker-uf'), q = document.getElementById('picker-q'),
+        list = document.getElementById('picker-list'), go = document.getElementById('picker-go'),
+        gps = document.getElementById('picker-gps'), out = document.getElementById('locate-result');
+  let items = [];
+  const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  async function loadUf() {
+    q.value = ''; go.disabled = true; list.innerHTML = '';
+    if (!uf.value) { q.disabled = true; return; }
+    q.disabled = true; q.placeholder = 'carregando…';
+    items = await (await fetch('/api/municipios?uf=' + uf.value)).json();
+    list.innerHTML = items.map(m => `<option value="${m.nome}">`).join('');
+    q.disabled = false; q.placeholder = 'Município…'; q.focus();
+  }
+  function match() { return items.find(m => norm(m.nome) === norm(q.value)); }
+  async function select(id) {
+    go.disabled = true; out.innerHTML = '<span class="spin"></span> pedindo coleta…';
+    const r = await fetch('/api/municipio/' + id + '/select', {method: 'POST'});
+    if (!r.ok) { out.textContent = 'erro: ' + ((await r.json()).detail || r.status); go.disabled = false; return; }
+    location.href = '/?m=' + id;
+  }
+  uf.addEventListener('change', loadUf);
+  q.addEventListener('input', () => { go.disabled = !match(); });
+  q.addEventListener('keydown', e => { if (e.key === 'Enter' && match()) select(match().id); });
+  go.addEventListener('click', () => { const m = match(); if (m) select(m.id); });
+  gps.addEventListener('click', () => {
+    if (!navigator.geolocation) { out.textContent = 'este navegador não tem geolocalização.'; return; }
+    if (!window.isSecureContext) { out.textContent = 'o navegador só libera o GPS em HTTPS (ou localhost). Escolha pela lista.'; return; }
+    out.innerHTML = '<span class="spin"></span> localizando…';
+    navigator.geolocation.getCurrentPosition(async pos => {
+      const {latitude: lat, longitude: lon} = pos.coords;
+      const r = await fetch(`/api/municipio/locate?lat=${lat}&lon=${lon}`);
+      if (!r.ok) { out.textContent = 'não achei um município para sua posição.'; return; }
+      const m = await r.json();
+      out.innerHTML = `Você está em <b>${m.nome}/${m.uf}</b> · <button class="btn small" type="button" id="gps-go">Selecionar</button>`;
+      document.getElementById('gps-go').addEventListener('click', () => select(m.id));
+    }, err => { out.textContent = 'GPS negado ou indisponível (' + err.message + ').'; }, {enableHighAccuracy: false, timeout: 15000, maximumAge: 300000});
+  });
+  if (uf.value) loadUf();
+})();
+</script>

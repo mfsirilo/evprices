@@ -1,0 +1,59 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4-alpine   # mesmo PG 16 + PostGIS (malhas dos municípios)
+    container_name: evprices-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-evprices}
+      POSTGRES_USER: ${POSTGRES_USER:-evprices}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      TZ: ${TZ:-America/Sao_Paulo}
+      PGTZ: ${TZ:-America/Sao_Paulo}
+    volumes:
+      - evprices-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-evprices} -d ${POSTGRES_DB:-evprices}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    image: evprices:latest
+    container_name: evprices-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-evprices}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-evprices}
+    command: >
+      sh -c "python -m evprices.run init-db &&
+             uvicorn evprices.web.app:app --host 0.0.0.0 --port 8080 --proxy-headers --forwarded-allow-ips='*'"
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    networks:
+      - default
+      - cloudflare-net     # túnel Cloudflare alcança o app por http://evprices-app:8080
+    depends_on:
+      db:
+        condition: service_healthy
+
+  collector:
+    image: evprices:latest
+    container_name: evprices-collector
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-evprices}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-evprices}
+    command: python -m evprices.run loop
+    depends_on:
+      db:
+        condition: service_healthy
+      app:
+        condition: service_started
+
+volumes:
+  evprices-pgdata:
+
+networks:
+  cloudflare-net:
+    external: true       # criada pelo compose de /var/lib/casaos/apps/cloudflare

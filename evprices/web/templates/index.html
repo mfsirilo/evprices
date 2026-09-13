@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}evprices — {% if mun %}{{ mun.nome }}/{{ mun.uf }}{% else %}preços{% endif %}{% endblock %}
+{% block content %}
+{% if not mun %}
+  {% include "_picker.html" %}
+{% else %}
+<div class="card">
+  <div class="munbar">
+    <div class="grow"><div class="name">{{ mun.nome }}/{{ mun.uf }}</div>
+      <div class="muted" id="mun-status" data-id="{{ mun.id }}" data-collecting="{{ 1 if (mun.collecting_since or mun.collect_requested_at) else 0 }}">
+        {% if mun.collecting_since or mun.collect_requested_at %}<span class="spin"></span> coletando… a página atualiza sozinha
+        {% elif mun.last_collected_at %}coletado {{ mun.last_collected_at|dt }} · {{ mun.stations }} estação(ões){% if mun.last_error %} · <span class="fee-bad">{{ mun.last_error }}</span>{% endif %}
+        {% else %}ainda não coletado{% endif %}
+        {% if not mun.monitored %} · <span class="fee-bad">não monitorado</span>{% endif %}
+      </div></div>
+    <button class="btn ghost small" type="button" onclick="document.getElementById('picker-wrap').hidden=false;this.hidden=true">trocar</button>
+    <a class="btn ghost small" href="/evolucao?m={{ mun.id }}">📈 evolução</a>
+    <button class="btn small" type="button" id="recollect" {% if mun.collecting_since or mun.collect_requested_at %}disabled{% endif %}>coletar agora</button>
+  </div>
+</div>
+<div id="picker-wrap" hidden>{% include "_picker.html" %}</div>
+<script>
+(function () {
+  const st = document.getElementById('mun-status'), id = st.dataset.id;
+  document.getElementById('recollect').addEventListener('click', async e => {
+    e.target.disabled = true; await fetch('/api/municipio/' + id + '/select', {method: 'POST'}); location.reload();
+  });
+  if (st.dataset.collecting === '1') {
+    const t = setInterval(async () => {
+      const m = await (await fetch('/api/municipio/' + id)).json();
+      if (!m.collecting_since && !m.collect_requested_at) { clearInterval(t); location.reload(); }
+    }, 4000);
+  }
+})();
+</script>
+
+<form class="scenario" method="get" action="/">
+  <input type="hidden" name="m" value="{{ mun.id }}">
+  <div><label>kWh</label><input type="number" name="kwh" inputmode="decimal" step="0.5" min="0" value="{{ sc.kwh|num }}"></div>
+  <div><label>min carga</label><input type="number" name="charge_min" inputmode="numeric" step="1" min="0" value="{{ sc.charge_min|num }}"></div>
+  <div><label>min ocioso</label><input type="number" name="idle_min" inputmode="numeric" step="1" min="0" value="{{ sc.idle_min|num }}"></div>
+  <button type="submit">OK</button>
+</form>
+
+{% if home %}
+<div class="card" style="padding:10px 14px" id="home-card" data-conv="{{ home.convencional.price_kwh }}" data-branca="{{ home.branca.price_kwh if home.branca else '' }}">
+  <div class="row"><div class="grow"><b>Em casa</b> <span class="muted">({{ home.distribuidora }}{% if home.convencional.bandeira %}, bandeira {{ home.convencional.bandeira|lower }}{% endif %})</span></div>
+    <div style="text-align:right;white-space:nowrap"><b>{{ home.convencional.price_kwh|brl }}</b><span class="muted">/kWh</span>
+      {% if home.branca %}<div class="muted">branca fora ponta {{ home.branca.price_kwh|brl }}</div>{% endif %}</div></div>
+  <div class="opt" style="margin-top:6px">
+    <div>
+      <div class="plug">Recarga de <span id="home-kwh">{{ sc.kwh|num }}</span> kWh em casa</div>
+      <div class="fees">com ~10% de perda do carregador de parede: <span id="home-loss">{{ (home.convencional.price_kwh * sc.kwh * 1.1)|brl }}</span>{% if home.branca %} · branca fora ponta <span id="home-branca-total">{{ (home.branca.price_kwh * sc.kwh)|brl }}</span>{% endif %}</div>
+    </div>
+    <div>
+      <div class="price" id="home-total">{{ (home.convencional.price_kwh * sc.kwh)|brl }}</div>
+      <div class="total">vs. melhor eletroposto {% if stations and stations[0].best_total is not none %}<b>{{ stations[0].best_total|brl }}</b>{% else %}—{% endif %}</div>
+    </div>
+  </div>
+  <div class="muted">Tarifa ANEEL + bandeira + ICMS {{ home.uf }} {{ home.icms_pct|num }}% + PIS/COFINS {% if home.piscofins_source == 'aproximado' %}≈{{ home.piscofins_pct|num }}% (aproximado; a distribuidora não publica em formato legível){% else %}{{ home.piscofins_pct|num }}% (publicado: {{ home.piscofins_source }}){% endif %}.</div>
+</div>
+<script>
+// o total de casa acompanha o campo kWh enquanto você digita, antes de enviar o cenário
+(function () {
+  const card = document.getElementById('home-card'), inp = document.querySelector('form.scenario input[name=kwh]');
+  if (!card || !inp) return;
+  const conv = parseFloat(card.dataset.conv), branca = parseFloat(card.dataset.branca);
+  const brl = v => v.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  inp.addEventListener('input', () => {
+    const k = parseFloat(inp.value.replace(',', '.')); if (!(k >= 0)) return;
+    set('home-kwh', k.toLocaleString('pt-BR')); set('home-total', brl(conv * k)); set('home-loss', brl(conv * k * 1.1));
+    if (!isNaN(branca)) set('home-branca-total', brl(branca * k));
+  });
+})();
+</script>
+{% endif %}
+<p class="muted">
+  Ranking pelo custo total do cenário ({{ sc.kwh|num }} kWh, {{ sc.charge_min|num }} min carregando, {{ sc.idle_min|num }} min ocioso).
+  Só tomadas acima de {{ settings.min_power_kw|num }} kW.
+</p>
+
+{% if not stations %}
+<div class="card">{% if mun.collecting_since or mun.collect_requested_at %}Aguardando a coleta…{% elif mun.last_collected_at %}Nenhum carregador pago acima de {{ settings.min_power_kw|num }} kW encontrado em {{ mun.nome }}/{{ mun.uf }} nas fontes consultadas.{% else %}Nenhuma estação ainda.{% endif %}</div>
+{% endif %}
+
+<div class="grid">
+{% for s in stations %}
+<a class="card" href="/station/{{ s.station_id }}">
+  {% set bb = brand_badge(s.brand) %}{% set lg = brand_logo(s.brand) %}
+  <div class="row brandline">
+    {% if lg %}<img class="logo" src="{{ lg }}" alt="{{ s.brand or 'tupi' }}" title="{{ s.brand or 'tupi' }}" loading="lazy">
+    {% else %}<span class="logo" style="background:{{ bb[1] }};color:{{ bb[2] }}" title="{{ s.brand }}">{{ bb[0] }}</span>{% endif %}
+    <div class="grow">
+      <div class="name">{{ s.station }}</div>
+      <div class="muted">{{ s.address or "" }}</div>
+    </div>
+  </div>
+  {% for o in s.options %}
+  <div class="opt">
+    <div>
+      <div class="plug">{{ o.plug_type or "?" }} · {{ o.current_type or "" }} {{ o.power_kw|num }} kW{% if o.count > 1 %} ×{{ o.count }}{% endif %}
+        <span class="muted state-{{ o.state }}">{{ o.state or "" }}</span></div>
+      <div class="fees">
+        {% if o.flat_fee and o.flat_fee > 0 %}<span class="fee-bad">ativação {{ o.flat_fee|brl }}{% if o.flat_fee_waived_above_kwh %} (isenta ≥ {{ o.flat_fee_waived_above_kwh|num }} kWh){% endif %}</span> · {% endif %}
+        {{ idle_desc(o.idle_fee, o.idle_period_min, o.idle_grace_min) }}
+        {% if o.windows %} · <span title="preço varia por horário">⏱ {{ o.windows }} janelas</span>{% endif %}
+        {% if o.price_min %} · {{ o.price_min|brl(3) }}/min{% endif %}
+        {% if o.notes %} · {{ o.notes }}{% endif %}
+      </div>
+    </div>
+    <div>
+      <div class="price">{% if o.price_kwh_used is not none %}{{ o.price_kwh_used|brl }}<small>/kWh</small>{% elif o.price_min %}{{ o.price_min|brl(3) }}<small>/min</small>{% else %}—{% endif %}</div>
+      <div class="total">{% if o.total is not none %}total <b>{{ o.total|brl }}</b>{% else %}preço desconhecido{% endif %}</div>
+    </div>
+  </div>
+  {% endfor %}
+  <div class="muted" style="margin-top:6px">desde {{ s.options[0].valid_from|date }} · visto {{ s.last_seen_at|date }}</div>
+</a>
+{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

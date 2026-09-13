@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}evprices — municípios{% endblock %}
+{% block content %}
+<p class="muted">Municípios monitorados são recoletados a cada {{ settings.collect_interval_hours|num }} h. Parar de monitorar mantém o histórico.</p>
+<div class="card tbl">
+<table>
+  <tr><th>Município</th><th class="r">Estações</th><th>Última coleta</th><th></th></tr>
+  {% for r in rows %}
+  <tr>
+    <td><a href="/?m={{ r.id }}"><b>{{ r.nome }}/{{ r.uf }}</b></a>
+      {% if not r.monitored %}<div class="muted">não monitorado</div>{% endif %}
+      {% if r.last_error %}<div class="fee-bad">{{ r.last_error }}</div>{% endif %}</td>
+    <td class="r">{{ r.stations }}</td>
+    <td>{% if r.collecting_since or r.collect_requested_at %}<span class="spin"></span> coletando{% else %}{{ r.last_collected_at|dt }}{% endif %}</td>
+    <td class="r">
+      {% if r.monitored %}<button class="btn ghost small" type="button" data-act="unmonitor" data-id="{{ r.id }}">parar</button>
+      {% else %}<button class="btn small" type="button" data-act="select" data-id="{{ r.id }}">monitorar</button>{% endif %}
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="muted">nenhum município ainda — <a href="/">escolha um</a></td></tr>
+  {% endfor %}
+</table>
+</div>
+<script>
+document.querySelectorAll('button[data-act]').forEach(b => b.addEventListener('click', async () => {
+  b.disabled = true; await fetch(`/api/municipio/${b.dataset.id}/${b.dataset.act}`, {method: 'POST'}); location.reload();
+}));
+</script>
+{% endblock %}

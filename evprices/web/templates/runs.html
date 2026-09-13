@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}evprices — coletas{% endblock %}
+{% block content %}
+<div class="card tbl">
+<table>
+  <tr><th>Início</th><th>Município</th><th>Fonte</th><th class="r">Estações</th><th class="r">Tomadas</th><th class="r">Novas</th><th class="r">Mudaram</th><th>Erro</th></tr>
+  {% for r in runs %}
+  <tr>
+    <td>{{ r.started_at|dt }}<div class="muted">{% if r.finished_at %}{{ ((r.finished_at - r.started_at).total_seconds())|round|int }} s{% else %}em andamento{% endif %}</div></td>
+    <td>{{ r.municipio or "—" }}</td>
+    <td>{{ r.source }}</td>
+    <td class="r">{{ r.stations_seen }}</td><td class="r">{{ r.connectors_seen }}</td>
+    <td class="r">{{ r.tariffs_new }}</td><td class="r">{{ r.tariffs_changed }}</td>
+    <td class="fee-bad">{{ r.error or "" }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="muted">nenhuma coleta ainda</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ st.name }} — evprices{% endblock %}
+{% block content %}
+<div class="card">
+  {% set bb = brand_badge(st.brand) %}{% set lg = brand_logo(st.brand) %}
+  <div class="row brandline">{% if lg %}<img class="logo" src="{{ lg }}" alt="{{ st.brand or 'tupi' }}">{% else %}<span class="logo" style="background:{{ bb[1] }};color:{{ bb[2] }}">{{ bb[0] }}</span>{% endif %}
+    <div class="grow"><div class="name" style="white-space:normal">{{ st.name }}</div></div>
+    <span class="chip">{{ st.brand or "tupi" }}</span></div>
+  <div class="muted">{{ st.address or "" }}</div>
+  <div class="muted">{{ st.business_hours or "" }}{% if st.free_parking is not none %} · estacionamento {{ "grátis" if st.free_parking else "pago" }}{% endif %}
+    · estado <span class="state-{{ st.state }}">{{ st.state or "?" }}</span></div>
+  <div class="muted">{% if mun %}<a href="/?m={{ mun.id }}">{{ mun.nome }}/{{ mun.uf }}</a> · {% endif %}ID {{ st.external_id }} · visto {{ st.last_seen_at|dt }}</div>
+</div>
+
+{% for c in connectors %}
+<h2>Tomada {{ c.external_id }} — {{ c.plug_type or "?" }} · {{ c.current_type or "" }} {{ c.power_kw|num }} kW
+  <span class="muted state-{{ c.state }}">{{ c.state or "" }}</span></h2>
+<div class="card tbl">
+<table>
+  <tr><th>Vigência</th><th class="r">R$/kWh</th><th class="r">Ativação</th><th>Ociosidade</th></tr>
+  {% for t in c.tariffs %}
+  <tr>
+    <td>{{ t.valid_from|date }} → {% if t.valid_to %}{{ t.valid_to|date }}{% else %}<span class="current">vigente</span>{% endif %}
+        <div class="muted">confirmado {{ t.last_confirmed_at|date }}</div>
+        {% if t.windows %}<div class="muted">{% for w in t.windows %}{{ w.start_time }}–{{ w.end_time }}: {{ w.price_kwh|brl }}{% if w.is_default %}*{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+        {% if t.notes %}<div class="muted">{{ t.notes }}</div>{% endif %}</td>
+    <td class="r"><b>{% if t.price_kwh is not none %}{{ t.price_kwh|brl }}{% elif t.price_min %}{{ t.price_min|brl(3) }}/min{% else %}—{% endif %}</b></td>
+    <td class="r">{% if t.flat_fee and t.flat_fee > 0 %}{{ t.flat_fee|brl }}{% if t.flat_fee_waived_above_kwh %}<div class="muted">isenta ≥ {{ t.flat_fee_waived_above_kwh|num }} kWh</div>{% endif %}{% else %}—{% endif %}</td>
+    <td>{{ idle_desc(t.idle_fee, t.idle_period_min, t.idle_grace_min) }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="muted">sem tarifa registrada</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endfor %}
+<p class="muted"><a href="/api/history/{{ connectors[0].id if connectors else 0 }}">JSON</a> · <a href="/">← voltar</a></p>
+{% endblock %}
