@@ -100,6 +100,8 @@ INSERT INTO source (slug, name, kind, base_url) VALUES
     ('tupi',   'Tupi Mob (Tupinambá) — mapa web público', 'public_web', 'https://api.tupinambaenergia.com.br'),
     ('turbostation', 'Turbo Station — site público',       'public_web', 'https://www.turbostation.com.br'),
     ('oncharge', 'On-Charge — mapa web público (sem preço)', 'public_web', 'https://novo.oncharge.com.br'),
+    ('clubecharger', 'Clube Charger — mapa do web app (JSON público)', 'public_web', 'https://clubecharger.com'),
+    ('bow', 'Bow Energy — API do web app',                    'public_web', 'https://bow.app.br'),
     ('manual', 'Observação manual',                        'manual',     NULL)
 ON CONFLICT (slug) DO NOTHING;
 

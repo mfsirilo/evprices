@@ -13,8 +13,11 @@ Sem mapa, sem redistribuição.
   - **Tupi Mob** (`api.tupinambaenergia.com.br`): BYD Recharge, **Shell Recharge** (app "Shell Recharge LATAM"
     é a plataforma Tupi — `iconPack: shell`, preço completo), WEG/wemob, EON, Energik e dezenas de outras
     redes. Busca por raio que envolve o município + corte pelo polígono + 1 requisição por estação.
-  - **Turbo Station** e **On-Charge** (GSOL, BUENO, Green-V…): lista do país inteiro, cortada pelo polígono.
-    On-Charge não publica preço — entra como "preço desconhecido".
+  - **Turbo Station** e **On-Charge** (GSOL, BUENO, Green-V, Ecofortte…): lista do país inteiro, cortada pelo
+    polígono. On-Charge não publica preço — entra como "preço desconhecido".
+  - **Clube Charger** (`/api/map/stations` do web app): ~430 pontos no país com R$/kWh, ativação e tarifa por
+    horário; `kind=community` = ponto cadastrado pela comunidade (preço declarado pelo dono, anotado na tarifa).
+  - **Bow Energy** (API do web app `bow.app.br`): rede pequena no ES, com `tariff_per_kwh_brl`.
   - A Shell **não** tem outra fonte pública: o mapa global `ui-map.shellrecharge.com` não cobre o Brasil.
 - **Filtro** (`.env`): só tomadas com `power_kw > MIN_POWER_KW` (22 → AC 22 kW fica de fora) e, com
   `PAID_ONLY=true`, estações sabidamente gratuitas são descartadas.
@@ -27,6 +30,24 @@ Sem mapa, sem redistribuição.
   (kWh, minutos carregando, minutos ocioso) e página por estação com o histórico de cada tomada.
   O botão "📍 Usar minha localização" só funciona em **HTTPS** (ou localhost) — regra dos navegadores; pela
   URL do túnel Cloudflare funciona, pelo IP da LAN não.
+
+### Quem está por trás de cada app (plataformas white-label)
+
+| plataforma | apps (Play Store) | cobertura |
+|---|---|---|
+| Tupi / Tupinambá (`com.tupi.*`, `tupimob`) | BYD Recharge, Shell Recharge, WEG/wemob, EON, Ative Charge, Cia Charge, Nordeste Eletropostos, EV Eletroposto, Voltz, Plugo, BR Super Carga | ✅ coletor `tupi` |
+| On-Charge | GSOL, BUENO, Green-V, Ecofortte | ✅ `oncharge` (sem preço) |
+| Turbo Station | Turbo Station | ✅ `turbostation` |
+| Clube Charger | Clube Charger (+ Eletrovias, Watts Mobi, Zap Charge…) | ✅ `clubecharger` |
+| Bow Energy | Bow | ✅ `bow` |
+| Voltbras (`br.com.voltbras.*`) | IPE, ChargeOn, PowerUp, GO Electric, Eletrograal, NeoCharge | ❌ GraphQL exige API key embutida no app; sites sem mapa/preço |
+| movE (`use-move.com`) | E-CHARGE, G Cargas, GreenCar, Easy Charge, Eletricarr | ❌ só app; sem mapa web |
+| EZVolt / MyCharge (`br.com.mycharge.*`) | Mobix, DSAx, Volvo Car, RJ Eletropostos | ❌ só app; API exige login |
+| Spott | Universal Eletroposto | ❌ só app |
+| próprios | Voltta, VeVolt, Celesc | ❌ sites institucionais sem preço |
+
+Regra do projeto: só fontes públicas, sem conta e sem interceptar app. Se alguma dessas plataformas publicar um
+mapa web, o coletor é um arquivo em `evprices/collectors/` + uma linha em `COLLECTORS` (`run.py`) e em `source` (schema).
 
 ## Referência "em casa" (tarifa da distribuidora)
 

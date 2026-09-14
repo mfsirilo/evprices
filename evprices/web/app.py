@@ -75,6 +75,8 @@ BRANDS: dict[str, tuple[str, str, str]] = {
     "green-v":  ("GV",   "#3aa655", "#fff"),
     "eon":      ("EON",  "#e2001a", "#fff"),
     "zletric":  ("ZL",   "#111",    "#fff"),
+    "clubecharger": ("CC", "#2f6b4f", "#fff"),
+    "bow":      ("BOW",  "#001b74", "#fff"),
 }
 
 

@@ -25,6 +25,8 @@ COLLECTORS = {
     "tupi": "evprices.collectors.tupi",
     "turbostation": "evprices.collectors.turbostation",
     "oncharge": "evprices.collectors.oncharge",
+    "clubecharger": "evprices.collectors.clubecharger",
+    "bow": "evprices.collectors.bow",
 }
 
 
