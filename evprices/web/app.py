@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .. import db, home_tariff
+from .. import db, home_tariff, timerange
 from ..config import settings
 from ..municipios import slug as busca_slug
 
@@ -296,14 +296,16 @@ def _evolution(conn, municipio_id: int) -> list[dict[str, Any]]:
     return out
 
 
-def _home_for(conn, mun: dict[str, Any] | None, stations: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Série 'carregar em casa' cobrindo o mesmo período do histórico das estações (mínimo 90 dias)."""
+def _home_for(conn, mun: dict[str, Any] | None, stations: list[dict[str, Any]], start: date | None = None,
+              end: date | None = None) -> dict[str, Any] | None:
+    """Série 'carregar em casa' cobrindo o período pedido (padrão: histórico das estações, mínimo 90 dias)."""
     if not mun or not mun.get("distribuidora"):
         return None
-    firsts = [se["points"][0]["from"] for st in stations for se in st["series"]]
-    start = min((datetime.fromisoformat(f).date() for f in firsts), default=date.today())
-    start = min(start, date.today() - timedelta(days=90))
-    series = home_tariff.home_series(conn, mun["distribuidora"], mun["uf"], start, date.today())
+    if start is None:
+        firsts = [se["points"][0]["from"] for st in stations for se in st["series"]]
+        start = min((datetime.fromisoformat(f).date() for f in firsts), default=date.today())
+        start = min(start, date.today() - timedelta(days=90))
+    series = home_tariff.home_series(conn, mun["distribuidora"], mun["uf"], start, min(end or date.today(), date.today()))
     if not series:
         return None
     last = series[0]["points"][-1]
@@ -311,14 +313,38 @@ def _home_for(conn, mun: dict[str, Any] | None, stations: list[dict[str, Any]]) 
             "piscofins_pct": last["piscofins_pct"], "piscofins_source": last["piscofins_source"], "series": series}
 
 
+RANGE_COOKIE = "evo_range"
+DEFAULT_RANGE = ("now-30d", "now")
+
+
 @app.get("/evolucao", response_class=HTMLResponse)
-def evolucao_page(request: Request, m: int | None = Query(None)):
+def evolucao_page(request: Request, m: int | None = Query(None), from_: str | None = Query(None, alias="from"),
+                  to: str | None = Query(None)):
+    """Período no estilo Zabbix (?from=now-7d&to=now). Sem parâmetros usa a última escolha (cookie) ou 30 dias."""
     mid = _selected_municipio(request, m)
+    from_form = from_ is not None or to is not None
+    if not from_form:
+        c = request.cookies.get(RANGE_COOKIE, "")
+        from_, to = (c.split("|", 1) if "|" in c else DEFAULT_RANGE)
+    from_, to = from_ or DEFAULT_RANGE[0], to or DEFAULT_RANGE[1]
+    range_error = None
+    try:
+        start, end = timerange.parse_range(from_, to, settings.tz)
+    except timerange.TimeRangeError as e:
+        range_error = str(e)
+        start, end = timerange.parse_range(*DEFAULT_RANGE, settings.tz)
     with db.connect() as conn:
         mun = _municipio(conn, mid) if mid is not None else None
         stations = _evolution(conn, mun["id"]) if mun else []
-        home = _home_for(conn, mun, stations)
-    return templates.TemplateResponse(request, "evolucao.html", {"mun": mun, "stations": stations, "home": home})
+        home = _home_for(conn, mun, stations, start.date(), end.date())
+    resp = templates.TemplateResponse(request, "evolucao.html", {
+        "mun": mun, "stations": stations, "home": home,
+        "rng": {"from": from_, "to": to, "start": start.isoformat(), "end": end.isoformat(),
+                "label": f"{start:%d/%m/%y %H:%M} → {end:%d/%m/%y %H:%M}", "error": range_error},
+    })
+    if from_form and not range_error:
+        resp.set_cookie(RANGE_COOKIE, f"{from_}|{to}", max_age=365 * 86400, samesite="lax")
+    return resp
 
 
 @app.get("/api/evolution")

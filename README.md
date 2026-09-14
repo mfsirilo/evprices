@@ -105,7 +105,7 @@ docker compose exec db psql -U evprices -d evprices                    # SQL dir
 | rota | o quê |
 |---|---|
 | `/` | seletor de município (cookie lembra o último) + ranking por cenário (`?m=5218805&kwh=30&charge_min=40&idle_min=10`) |
-| `/evolucao?m=ID` | gráfico: um painel por estação com a evolução do R$/kWh em degraus (escala comum ou por estação) |
+| `/evolucao?m=ID&from=now-7d&to=now` | gráfico: um painel por estação com a evolução do R$/kWh em degraus; período estilo Zabbix (`now-30d`, `now/M`, `now-1M/M`, `2026-09-01 14:00`; unidades m h d w M y), com períodos rápidos e última escolha lembrada |
 | `/favoritas` | estações marcadas com ★ (de todos os municípios) pelo custo do cenário; `/?fav=1` filtra o ranking |
 | `/municipios` | municípios monitorados, estado da coleta, parar/retomar |
 | `/station/{id}` | tomadas da estação + histórico de tarifas; endereço abre o app de mapas (Google/Apple) e botão de rotas |

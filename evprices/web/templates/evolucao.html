@@ -17,6 +17,22 @@
          border-radius: 8px; padding: 6px 8px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.15); white-space: nowrap; }
   .tip b { font-variant-numeric: tabular-nums; }
   .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  /* seletor de período (estilo Zabbix) */
+  .trange { padding: 10px 14px; }
+  .trange form { display: grid; grid-template-columns: auto 1fr auto 1fr auto; gap: 6px 8px; align-items: center; }
+  .trange label { font-size: 12px; color: var(--muted); }
+  .trange input { width: 100%; font-size: 15px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 10px;
+                  background: var(--card); color: var(--fg); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .trange input.bad { border-color: var(--bad); }
+  .trange .now { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .trange details { margin-top: 8px; }
+  .trange summary { cursor: pointer; font-size: 13px; color: var(--accent); }
+  .quick { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0 16px; margin-top: 6px; }
+  .quick ul { list-style: none; margin: 0; padding: 0; }
+  .quick li a { display: block; font-size: 13px; padding: 4px 0; color: var(--fg); }
+  .quick li a.selected { color: var(--accent); font-weight: 600; }
+  .quick li a:active { opacity: .6; }
+  @media (max-width: 480px) { .trange form { grid-template-columns: auto 1fr; } .trange form button { grid-column: 1 / -1; } }
   .toolbar label { font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
   text { font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; fill: var(--muted);
          font-variant-numeric: tabular-nums; }
@@ -38,6 +54,59 @@
 {% if not stations %}
 <div class="card muted">Nenhuma estação com preço em R$/kWh neste município ainda.</div>
 {% else %}
+<div class="card trange">
+  <form method="get" action="/evolucao" id="trange">
+    <input type="hidden" name="m" value="{{ mun.id }}">
+    <label for="from">De</label><input type="text" id="from" name="from" value="{{ rng.from }}" autocomplete="off" spellcheck="false" class="{% if rng.error %}bad{% endif %}">
+    <label for="to">Para</label><input type="text" id="to" name="to" value="{{ rng.to }}" autocomplete="off" spellcheck="false" class="{% if rng.error %}bad{% endif %}">
+    <button class="btn small" type="submit">Aplicar</button>
+  </form>
+  <div class="now">{% if rng.error %}<span class="fee-bad">{{ rng.error }} — usando os últimos 30 dias.</span> {% endif %}Período: <b>{{ rng.label }}</b>
+    · aceita <code>now-7d</code>, <code>now/M</code>, <code>now-1M/M</code> ou <code>2026-09-01 14:00</code> (unidades: m h d w M y)</div>
+  <details>
+    <summary>Períodos rápidos</summary>
+    <div class="quick">
+      <ul>
+        <li><a data-from="now-24h" data-to="now" href="#">Último 1 dia</a></li>
+        <li><a data-from="now-2d" data-to="now" href="#">Últimos 2 dias</a></li>
+        <li><a data-from="now-7d" data-to="now" href="#">Últimos 7 dias</a></li>
+        <li><a data-from="now-30d" data-to="now" href="#">Últimos 30 dias</a></li>
+        <li><a data-from="now-3M" data-to="now" href="#">Últimos 3 meses</a></li>
+        <li><a data-from="now-6M" data-to="now" href="#">Últimos 6 meses</a></li>
+        <li><a data-from="now-1y" data-to="now" href="#">Último 1 ano</a></li>
+        <li><a data-from="now-2y" data-to="now" href="#">Últimos 2 anos</a></li>
+      </ul>
+      <ul>
+        <li><a data-from="now-1d/d" data-to="now-1d/d" href="#">Ontem</a></li>
+        <li><a data-from="now-2d/d" data-to="now-2d/d" href="#">Anteontem</a></li>
+        <li><a data-from="now-1w/d" data-to="now-1w/d" href="#">Este dia na semana passada</a></li>
+        <li><a data-from="now-1w/w" data-to="now-1w/w" href="#">Semana anterior</a></li>
+        <li><a data-from="now-1M/M" data-to="now-1M/M" href="#">Mês anterior</a></li>
+        <li><a data-from="now-1y/y" data-to="now-1y/y" href="#">Ano anterior</a></li>
+      </ul>
+      <ul>
+        <li><a data-from="now/d" data-to="now/d" href="#">Hoje</a></li>
+        <li><a data-from="now/d" data-to="now" href="#">Até agora hoje</a></li>
+        <li><a data-from="now/w" data-to="now/w" href="#">Esta semana</a></li>
+        <li><a data-from="now/w" data-to="now" href="#">Até agora nesta semana</a></li>
+        <li><a data-from="now/M" data-to="now/M" href="#">Este mês</a></li>
+        <li><a data-from="now/M" data-to="now" href="#">Até agora neste mês</a></li>
+        <li><a data-from="now/y" data-to="now/y" href="#">Este ano</a></li>
+        <li><a data-from="now/y" data-to="now" href="#">Até agora neste ano</a></li>
+      </ul>
+    </div>
+  </details>
+</div>
+<script>
+(function () {
+  const f = document.getElementById('from'), t = document.getElementById('to'), form = document.getElementById('trange');
+  document.querySelectorAll('.quick a').forEach(a => {
+    if (a.dataset.from === f.value && a.dataset.to === t.value) a.classList.add('selected');
+    a.addEventListener('click', e => { e.preventDefault(); f.value = a.dataset.from; t.value = a.dataset.to; form.submit(); });
+  });
+})();
+</script>
+
 <div class="toolbar">
   <label><input type="checkbox" id="shared-y" checked> mesma escala de preço em todos</label>
   <label><input type="checkbox" id="from-zero"> eixo a partir de R$ 0</label>
@@ -58,31 +127,39 @@
 
 <script id="data" type="application/json">{{ stations|tojson }}</script>
 <script id="home" type="application/json">{{ (home.series if home else [])|tojson }}</script>
+<script id="rng" type="application/json">{{ (rng if rng else {})|tojson }}</script>
 <script>
 (function () {
-  const data = JSON.parse(document.getElementById('data').textContent);
+  const raw = JSON.parse(document.getElementById('data').textContent);
   const home = JSON.parse(document.getElementById('home').textContent);
-  if (!data.length) return;
+  const rng = JSON.parse(document.getElementById('rng').textContent);
+  if (!raw.length) return;
   const brl = v => v.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
   const fmtD = d => d.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit', year: '2-digit'});
   const fmtDT = d => d.toLocaleString('pt-BR', {day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit'});
   const colors = ['var(--s1)', 'var(--s2)', 'var(--s3)'];
   const now = Date.now();
-  data.forEach(st => st.series.forEach(se => se.points.forEach(p => { p.t0 = Date.parse(p.from); p.t1 = p.to ? Date.parse(p.to) : now; })));
-  // casa: datas civis (dia inteiro); o último segmento vai até agora
+  // janela escolhida (De/Para); recorta cada série a ela — tarifa vigente vai até o fim da janela (ou até agora)
+  const tMin = rng.start ? Date.parse(rng.start) : Math.min(...raw.flatMap(st => st.series.flatMap(se => se.points.map(p => Date.parse(p.from)))));
+  const tMax = Math.min(rng.end ? Date.parse(rng.end) : now, now);
+  const clip = pts => pts.map(p => ({...p, t0: Math.max(p.t0, tMin), t1: Math.min(p.t1, tMax)})).filter(p => p.t0 <= p.t1);
+  raw.forEach(st => st.series.forEach(se => se.points.forEach(p => { p.t0 = Date.parse(p.from); p.t1 = p.to ? Date.parse(p.to) : now; })));
+  const data = raw.map(st => ({...st, series: st.series.map(se => ({...se, points: clip(se.points)})).filter(se => se.points.length)})).filter(st => st.series.length);
+  const hidden = raw.length - data.length;
   home.forEach(se => se.points.forEach((p, i) => { p.t0 = Date.parse(p.from + 'T00:00:00'); p.t1 = i === se.points.length - 1 ? now : Date.parse(p.to + 'T23:59:59'); }));
+  home.forEach(se => { se.points = clip(se.points); });
   const stPts = data.flatMap(st => st.series.flatMap(se => se.points));
-  const tMin = Math.min(...stPts.map(p => p.t0)), tMax = now;
+  if (!data.length) { document.getElementById('panels').innerHTML = '<div class="card muted">Nenhuma estação com tarifa dentro do período escolhido.</div>'; document.getElementById('range').textContent = ''; return; }
   const showHome = document.getElementById('show-home'), showHome2 = document.getElementById('show-home2');
   const homeVisible = () => home.filter((se, i) => i === 0 ? (showHome && showHome.checked) : (showHome2 && showHome2.checked));
   // só a parte da série de casa dentro da janela do gráfico
-  const homeClipped = () => homeVisible().map(se => ({...se, points: se.points.filter(p => p.t1 >= tMin).map(p => ({...p, t0: Math.max(p.t0, tMin)}))}));
+  const homeClipped = () => homeVisible().filter(se => se.points.length);
   const allPts = () => stPts.concat(homeClipped().flatMap(se => se.points));
   // período curto (< 3 dias): rótulo com hora, senão só data
   const fmtTick = tMax - tMin < 3 * 864e5
     ? d => d.toLocaleString('pt-BR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'}).replace(',', '')
     : fmtD;
-  document.getElementById('range').textContent = `histórico desde ${fmtD(new Date(tMin))}`;
+  document.getElementById('range').textContent = hidden ? `${hidden} estação(ões) sem tarifa no período` : '';
 
   const sharedY = document.getElementById('shared-y'), fromZero = document.getElementById('from-zero');
   const panels = document.getElementById('panels');
@@ -159,6 +236,7 @@
             <circle cx="${ex}" cy="${ey}" r="6" fill="var(--card)"/><circle cx="${ex}" cy="${ey}" r="4" fill="${c}"/>`;
       // rótulo direto só no fim da série mais barata (a que define o "atual")
       if (i === 0) g += `<text class="end" x="${ex + 8}" y="${ey + 4}">${brl(last.price_kwh)}</text>`;
+      if (tMax < now - 60000) g += `<title>preço no fim do período (${fmtDT(new Date(tMax))})</title>`;
     });
     g += `<line id="xh" x1="0" x2="0" y1="${mt}" y2="${H - mb}" stroke="var(--muted)" stroke-width="1" visibility="hidden"/>`;
     svg.innerHTML = g;
