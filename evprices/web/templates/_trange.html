@@ -1,0 +1,53 @@
+{# Seletor de período estilo Zabbix. Espera `rng` (from, to, label, error) e `trange_action`. #}
+<div class="card trange">
+  <form method="get" action="{{ trange_action }}" id="trange">
+    {% if mun %}<input type="hidden" name="m" value="{{ mun.id }}">{% endif %}
+    <label for="from">De</label><input type="text" id="from" name="from" value="{{ rng.from }}" autocomplete="off" spellcheck="false" class="{% if rng.error %}bad{% endif %}">
+    <label for="to">Para</label><input type="text" id="to" name="to" value="{{ rng.to }}" autocomplete="off" spellcheck="false" class="{% if rng.error %}bad{% endif %}">
+    <button class="btn small" type="submit">Aplicar</button>
+  </form>
+  <div class="now">{% if rng.error %}<span class="fee-bad">{{ rng.error }} — usando os últimos 30 dias.</span> {% endif %}Período: <b>{{ rng.label }}</b>
+    · aceita <code>now-7d</code>, <code>now/M</code>, <code>now-1M/M</code> ou <code>2026-09-01 14:00</code> (unidades: m h d w M y)</div>
+  <details>
+    <summary>Períodos rápidos</summary>
+    <div class="quick">
+      <ul>
+        <li><a data-from="now-24h" data-to="now" href="#">Último 1 dia</a></li>
+        <li><a data-from="now-2d" data-to="now" href="#">Últimos 2 dias</a></li>
+        <li><a data-from="now-7d" data-to="now" href="#">Últimos 7 dias</a></li>
+        <li><a data-from="now-30d" data-to="now" href="#">Últimos 30 dias</a></li>
+        <li><a data-from="now-3M" data-to="now" href="#">Últimos 3 meses</a></li>
+        <li><a data-from="now-6M" data-to="now" href="#">Últimos 6 meses</a></li>
+        <li><a data-from="now-1y" data-to="now" href="#">Último 1 ano</a></li>
+        <li><a data-from="now-2y" data-to="now" href="#">Últimos 2 anos</a></li>
+      </ul>
+      <ul>
+        <li><a data-from="now-1d/d" data-to="now-1d/d" href="#">Ontem</a></li>
+        <li><a data-from="now-2d/d" data-to="now-2d/d" href="#">Anteontem</a></li>
+        <li><a data-from="now-1w/d" data-to="now-1w/d" href="#">Este dia na semana passada</a></li>
+        <li><a data-from="now-1w/w" data-to="now-1w/w" href="#">Semana anterior</a></li>
+        <li><a data-from="now-1M/M" data-to="now-1M/M" href="#">Mês anterior</a></li>
+        <li><a data-from="now-1y/y" data-to="now-1y/y" href="#">Ano anterior</a></li>
+      </ul>
+      <ul>
+        <li><a data-from="now/d" data-to="now/d" href="#">Hoje</a></li>
+        <li><a data-from="now/d" data-to="now" href="#">Até agora hoje</a></li>
+        <li><a data-from="now/w" data-to="now/w" href="#">Esta semana</a></li>
+        <li><a data-from="now/w" data-to="now" href="#">Até agora nesta semana</a></li>
+        <li><a data-from="now/M" data-to="now/M" href="#">Este mês</a></li>
+        <li><a data-from="now/M" data-to="now" href="#">Até agora neste mês</a></li>
+        <li><a data-from="now/y" data-to="now/y" href="#">Este ano</a></li>
+        <li><a data-from="now/y" data-to="now" href="#">Até agora neste ano</a></li>
+      </ul>
+    </div>
+  </details>
+</div>
+<script>
+(function () {
+  const f = document.getElementById('from'), t = document.getElementById('to'), form = document.getElementById('trange');
+  document.querySelectorAll('.quick a').forEach(a => {
+    if (a.dataset.from === f.value && a.dataset.to === t.value) a.classList.add('selected');
+    a.addEventListener('click', e => { e.preventDefault(); f.value = a.dataset.from; t.value = a.dataset.to; form.submit(); });
+  });
+})();
+</script>

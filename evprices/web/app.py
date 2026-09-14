@@ -255,15 +255,17 @@ SELECT s.id AS station_id, s.name AS station, s.brand, s.address,
   FROM station s
   JOIN connector c ON c.station_id = s.id
   JOIN tariff t ON t.connector_id = c.id
- WHERE s.municipio_id = %s AND c.power_kw > %s
+ WHERE (s.municipio_id = %(municipio)s OR s.id = %(station)s) AND c.power_kw > %(min_kw)s
  ORDER BY s.id, c.external_id, t.valid_from
 """
 
 
-def _evolution(conn, municipio_id: int) -> list[dict[str, Any]]:
+def _evolution(conn, municipio_id: int | None, station_id: int | None = None) -> list[dict[str, Any]]:
     """Por estação, séries de R$/kWh ao longo do tempo. Tomadas com o mesmo plug/potência e o mesmo
-    histórico viram uma série só (×N). Tarifa sem R$/kWh (por minuto / desconhecida) fica de fora."""
-    rows = conn.execute(EVOLUTION_SQL, (municipio_id, settings.min_power_kw)).fetchall()
+    histórico viram uma série só (×N). Tarifa sem R$/kWh (por minuto / desconhecida) fica de fora.
+    Passe `station_id` (e municipio_id=None) para uma estação só."""
+    rows = conn.execute(EVOLUTION_SQL, {"municipio": municipio_id, "station": station_id,
+                                        "min_kw": settings.min_power_kw}).fetchall()
     by_conn: dict[int, dict[str, Any]] = {}
     stations: dict[int, dict[str, Any]] = {}
     for r in rows:
@@ -317,33 +319,40 @@ RANGE_COOKIE = "evo_range"
 DEFAULT_RANGE = ("now-30d", "now")
 
 
-@app.get("/evolucao", response_class=HTMLResponse)
-def evolucao_page(request: Request, m: int | None = Query(None), from_: str | None = Query(None, alias="from"),
-                  to: str | None = Query(None)):
-    """Período no estilo Zabbix (?from=now-7d&to=now). Sem parâmetros usa a última escolha (cookie) ou 30 dias."""
-    mid = _selected_municipio(request, m)
+def _page_range(request: Request, from_: str | None, to: str | None) -> tuple[dict[str, Any], bool]:
+    """Período estilo Zabbix (?from=now-7d&to=now). Sem parâmetros: última escolha (cookie) ou 30 dias.
+    Retorna (rng, veio_do_formulário); rng.start/end são datetimes; rng.error explica expressão inválida."""
     from_form = from_ is not None or to is not None
     if not from_form:
         c = request.cookies.get(RANGE_COOKIE, "")
         from_, to = (c.split("|", 1) if "|" in c else DEFAULT_RANGE)
     from_, to = from_ or DEFAULT_RANGE[0], to or DEFAULT_RANGE[1]
-    range_error = None
+    error = None
     try:
         start, end = timerange.parse_range(from_, to, settings.tz)
     except timerange.TimeRangeError as e:
-        range_error = str(e)
+        error = str(e)
         start, end = timerange.parse_range(*DEFAULT_RANGE, settings.tz)
+    return {"from": from_, "to": to, "start_dt": start, "end_dt": end, "start": start.isoformat(),
+            "end": end.isoformat(), "label": f"{start:%d/%m/%y %H:%M} → {end:%d/%m/%y %H:%M}", "error": error}, from_form
+
+
+def _remember_range(resp, rng: dict[str, Any], from_form: bool) -> None:
+    if from_form and not rng["error"]:
+        resp.set_cookie(RANGE_COOKIE, f"{rng['from']}|{rng['to']}", max_age=365 * 86400, samesite="lax")
+
+
+@app.get("/evolucao", response_class=HTMLResponse)
+def evolucao_page(request: Request, m: int | None = Query(None), from_: str | None = Query(None, alias="from"),
+                  to: str | None = Query(None)):
+    mid = _selected_municipio(request, m)
+    rng, from_form = _page_range(request, from_, to)
     with db.connect() as conn:
         mun = _municipio(conn, mid) if mid is not None else None
         stations = _evolution(conn, mun["id"]) if mun else []
-        home = _home_for(conn, mun, stations, start.date(), end.date())
-    resp = templates.TemplateResponse(request, "evolucao.html", {
-        "mun": mun, "stations": stations, "home": home,
-        "rng": {"from": from_, "to": to, "start": start.isoformat(), "end": end.isoformat(),
-                "label": f"{start:%d/%m/%y %H:%M} → {end:%d/%m/%y %H:%M}", "error": range_error},
-    })
-    if from_form and not range_error:
-        resp.set_cookie(RANGE_COOKIE, f"{from_}|{to}", max_age=365 * 86400, samesite="lax")
+        home = _home_for(conn, mun, stations, rng["start_dt"].date(), rng["end_dt"].date())
+    resp = templates.TemplateResponse(request, "evolucao.html", {"mun": mun, "stations": stations, "home": home, "rng": rng})
+    _remember_range(resp, rng, from_form)
     return resp
 
 
@@ -398,13 +407,17 @@ def municipios_page(request: Request):
 
 
 @app.get("/station/{station_id}", response_class=HTMLResponse)
-def station_page(request: Request, station_id: int):
+def station_page(request: Request, station_id: int, from_: str | None = Query(None, alias="from"),
+                 to: str | None = Query(None)):
+    rng, from_form = _page_range(request, from_, to)
     with db.connect() as conn:
         st = conn.execute("SELECT * FROM station WHERE id = %s", (station_id,)).fetchone()
         if not st:
             raise HTTPException(404)
         mun = _municipio(conn, st["municipio_id"]) if st["municipio_id"] else None
         st["favorite"] = station_id in _favorites(conn)
+        evo = _evolution(conn, None, station_id)
+        home = _home_for(conn, mun, evo, rng["start_dt"].date(), rng["end_dt"].date())
         connectors = conn.execute(
             "SELECT * FROM connector WHERE station_id = %s ORDER BY external_id", (station_id,)
         ).fetchall()
@@ -421,9 +434,11 @@ def station_page(request: Request, station_id: int):
                 """,
                 (c["id"],),
             ).fetchall()
-    return templates.TemplateResponse(
-        request, "station.html", {"st": st, "connectors": connectors, "mun": mun}
+    resp = templates.TemplateResponse(
+        request, "station.html", {"st": st, "connectors": connectors, "mun": mun, "evo": evo, "home": home, "rng": rng}
     )
+    _remember_range(resp, rng, from_form)
+    return resp
 
 
 @app.get("/runs", response_class=HTMLResponse)

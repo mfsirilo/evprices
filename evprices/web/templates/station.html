@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ st.name }} — evprices{% endblock %}
 {% block content %}
+<link rel="stylesheet" href="/static/evochart.css">
 <div class="card">
   {% set bb = brand_badge(st.brand) %}{% set lg = brand_logo(st.brand) %}
   <div class="row brandline">{% if lg %}<img class="logo" src="{{ lg }}" alt="{{ st.brand or 'tupi' }}">{% else %}<span class="logo" style="background:{{ bb[1] }};color:{{ bb[2] }}">{{ bb[0] }}</span>{% endif %}
@@ -18,6 +19,22 @@
     · estado <span class="state-{{ st.state }}">{{ st.state or "?" }}</span></div>
   <div class="muted">{% if mun %}<a href="/?m={{ mun.id }}">{{ mun.nome }}/{{ mun.uf }}</a> · {% endif %}ID {{ st.external_id }} · visto {{ st.last_seen_at|dt }}</div>
 </div>
+
+<h2>Evolução do R$/kWh</h2>
+{% set trange_action = "/station/" ~ st.id %}{% include "_trange.html" %}
+{% if home %}
+<div class="toolbar">
+  <label><input type="checkbox" id="show-home" checked> 🏠 casa · convencional</label>
+  {% if home.series|length > 1 %}<label><input type="checkbox" id="show-home2"> 🌙 casa · branca fora ponta</label>{% endif %}
+  <span class="muted" id="range"></span>
+</div>
+{% endif %}
+<div id="panels">{% if not evo %}<div class="card muted">Sem tarifa em R$/kWh registrada para esta estação.</div>{% endif %}</div>
+<script id="data" type="application/json">{{ evo|tojson }}</script>
+<script id="home" type="application/json">{{ (home.series if home else [])|tojson }}</script>
+<script id="rng" type="application/json">{{ {"start": rng.start, "end": rng.end}|tojson }}</script>
+<script src="/static/evochart.js"></script>
+<script>evoChart();</script>
 
 {% for c in connectors %}
 <h2>Tomada {{ c.external_id }} — {{ c.plug_type or "?" }} · {{ c.current_type or "" }} {{ c.power_kw|num }} kW
