@@ -105,11 +105,33 @@ templates.env.globals.update(idle_desc=idle_desc, settings=settings, brand_badge
 
 # ---------- consultas ----------
 def _scenario(kwh: float | None, charge_min: float | None, idle_min: float | None) -> dict[str, float]:
+    """Cenário para a API (Home Assistant etc.): parâmetro ou padrão do .env."""
     return {
         "kwh": kwh if kwh is not None else settings.default_kwh,
         "charge_min": charge_min if charge_min is not None else settings.default_charge_min,
         "idle_min": idle_min if idle_min is not None else settings.default_idle_min,
     }
+
+
+SCENARIO_COOKIE = "scenario"
+
+
+def _page_scenario(request: Request, kwh: float | None, charge_min: float | None, idle_min: float | None
+                   ) -> tuple[dict[str, float], bool]:
+    """Cenário das páginas: o que veio no formulário; senão a última escolha (cookie); senão zeros.
+    Retorna (cenário, veio_do_formulário) — quando veio do formulário, a resposta grava o cookie."""
+    if kwh is not None or charge_min is not None or idle_min is not None:
+        return {"kwh": kwh or 0, "charge_min": charge_min or 0, "idle_min": idle_min or 0}, True
+    c = request.cookies.get(SCENARIO_COOKIE, "")
+    try:
+        k, cm, im = (float(x) for x in c.split(","))
+        return {"kwh": k, "charge_min": cm, "idle_min": im}, False
+    except ValueError:
+        return {"kwh": 0, "charge_min": 0, "idle_min": 0}, False
+
+
+def _remember_scenario(resp, sc: dict[str, float]) -> None:
+    resp.set_cookie(SCENARIO_COOKIE, f"{sc['kwh']},{sc['charge_min']},{sc['idle_min']}", max_age=365 * 86400, samesite="lax")
 
 
 PRICES_SQL = """
@@ -201,7 +223,7 @@ def _grouped_prices(sc: dict[str, float], municipio_id: int | None, favorites_on
 def index(request: Request, m: int | None = Query(None), kwh: float | None = Query(None, ge=0),
           charge_min: float | None = Query(None, ge=0), idle_min: float | None = Query(None, ge=0),
           fav: int = Query(0)):
-    sc = _scenario(kwh, charge_min, idle_min)
+    sc, from_form = _page_scenario(request, kwh, charge_min, idle_min)
     mid = _selected_municipio(request, m)
     mun, stations, last_run = None, [], None
     with db.connect() as conn:
@@ -221,6 +243,8 @@ def index(request: Request, m: int | None = Query(None), kwh: float | None = Que
     )
     if m is not None and mun:   # ?m= vira o padrão nas próximas visitas
         resp.set_cookie("municipio", str(mun["id"]), max_age=365 * 86400, samesite="lax")
+    if from_form:
+        _remember_scenario(resp, sc)
     return resp
 
 
@@ -308,9 +332,12 @@ def api_evolution(municipio: int):
 @app.get("/favoritas", response_class=HTMLResponse)
 def favoritas_page(request: Request, kwh: float | None = Query(None, ge=0), charge_min: float | None = Query(None, ge=0),
                    idle_min: float | None = Query(None, ge=0)):
-    sc = _scenario(kwh, charge_min, idle_min)
+    sc, from_form = _page_scenario(request, kwh, charge_min, idle_min)
     stations = _grouped_prices(sc, None, favorites_only=True)
-    return templates.TemplateResponse(request, "favoritas.html", {"stations": stations, "sc": sc})
+    resp = templates.TemplateResponse(request, "favoritas.html", {"stations": stations, "sc": sc})
+    if from_form:
+        _remember_scenario(resp, sc)
+    return resp
 
 
 @app.get("/api/favorites")
