@@ -7,12 +7,11 @@
     <button class="btn small" type="submit">Aplicar</button>
   </form>
   <div class="now">{% if rng.error %}<span class="fee-bad">{{ rng.error }} — usando os últimos 30 dias.</span> {% endif %}Período: <b>{{ rng.label }}</b>
-    · aceita <code>now-7d</code>, <code>now/M</code>, <code>now-1M/M</code> ou <code>2026-09-01 14:00</code> (unidades: m h d w M y)</div>
+    · aceita <code>1h</code>, <code>now-7d</code>, <code>now/M</code>, <code>now-1M/M</code> ou <code>2026-09-01 14:00</code> (unidades: m h d w M y)</div>
   <details>
     <summary>Períodos rápidos</summary>
     <div class="quick">
       <ul>
-        <li><a data-from="now-24h" data-to="now" href="#">Último 1 dia</a></li>
         <li><a data-from="now-2d" data-to="now" href="#">Últimos 2 dias</a></li>
         <li><a data-from="now-7d" data-to="now" href="#">Últimos 7 dias</a></li>
         <li><a data-from="now-30d" data-to="now" href="#">Últimos 30 dias</a></li>
@@ -39,6 +38,16 @@
         <li><a data-from="now/y" data-to="now/y" href="#">Este ano</a></li>
         <li><a data-from="now/y" data-to="now" href="#">Até agora neste ano</a></li>
       </ul>
+      <ul>
+        <li><a data-from="now-5m" data-to="now" href="#">Últimos 5 minutos</a></li>
+        <li><a data-from="now-15m" data-to="now" href="#">Últimos 15 minutos</a></li>
+        <li><a data-from="now-30m" data-to="now" href="#">Últimos 30 minutos</a></li>
+        <li><a data-from="now-1h" data-to="now" href="#">Última 1 hora</a></li>
+        <li><a data-from="now-3h" data-to="now" href="#">Últimas 3 horas</a></li>
+        <li><a data-from="now-6h" data-to="now" href="#">Últimas 6 horas</a></li>
+        <li><a data-from="now-12h" data-to="now" href="#">Últimas 12 horas</a></li>
+        <li><a data-from="now-24h" data-to="now" href="#">Último 1 dia</a></li>
+      </ul>
     </div>
   </details>
 </div>
@@ -46,7 +55,8 @@
 (function () {
   const f = document.getElementById('from'), t = document.getElementById('to'), form = document.getElementById('trange');
   document.querySelectorAll('.quick a').forEach(a => {
-    if (a.dataset.from === f.value && a.dataset.to === t.value) a.classList.add('selected');
+    const norm = v => /^\d+\s*[mhdwMy]$/.test(v.trim()) ? 'now-' + v.replace(/\s+/g, '') : v.trim();
+    if (a.dataset.from === norm(f.value) && a.dataset.to === norm(t.value)) a.classList.add('selected');
     a.addEventListener('click', e => { e.preventDefault(); f.value = a.dataset.from; t.value = a.dataset.to; form.submit(); });
   });
 })();

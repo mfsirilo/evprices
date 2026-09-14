@@ -9,8 +9,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
       TZ: ${TZ:-America/Sao_Paulo}
       PGTZ: ${TZ:-America/Sao_Paulo}
-    ports:
-      - "${DB_PORT:-5535}:5432"     # acesso externo (Adminer/DBeaver): host:5535, user/senha do .env
+#    ports:
+#      - "${DB_PORT:-5535}:5432"     # acesso externo (Adminer/DBeaver): host:5535, user/senha do .env
     volumes:
       - evprices-pgdata:/var/lib/postgresql/data
     healthcheck:

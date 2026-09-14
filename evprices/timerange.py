@@ -2,6 +2,7 @@
 
   now            agora
   now-7d         7 dias atrás           unidades: m (min) h d w M y
+  7d / 1h / 15m  atalho para now-7d / now-1h / now-15m
   now/d          início do dia (em "De") ou fim do dia (em "Para")
   now-1M/M       início/fim do mês anterior
   2026-09-01     data absoluta (também 'YYYY-MM-DD HH:MM' e 'YYYY-MM-DD HH:MM:SS')
@@ -13,6 +14,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 _REL = re.compile(r"^now(?:([+-])(\d+)([mhdwMy]))?(?:/([mhdwMy]))?$")
+_SHORT = re.compile(r"^(\d+)\s*([mhdwMy])$")   # '1h', '15m', '7d' => 'now-1h'…
 _ABS = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d")
 
 
@@ -72,6 +74,9 @@ def parse(expr: str, *, end: bool, now: datetime | None = None, tz: str = "Ameri
     e = (expr or "").strip()
     if not e:
         raise TimeRangeError("vazio")
+    sh = _SHORT.match(e)
+    if sh:
+        e = f"now-{sh.group(1)}{sh.group(2)}"
     m = _REL.match(e)
     if m:
         sign, n, unit, rnd = m.groups()
