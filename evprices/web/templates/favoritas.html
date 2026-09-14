@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}evprices — favoritas{% endblock %}
+{% block content %}
+<form class="scenario" method="get" action="/favoritas">
+  <div><label>kWh</label><input type="number" name="kwh" inputmode="decimal" step="0.5" min="0" value="{{ sc.kwh|num }}"></div>
+  <div><label>min carga</label><input type="number" name="charge_min" inputmode="numeric" step="1" min="0" value="{{ sc.charge_min|num }}"></div>
+  <div><label>min ocioso</label><input type="number" name="idle_min" inputmode="numeric" step="1" min="0" value="{{ sc.idle_min|num }}"></div>
+  <button type="submit">OK</button>
+</form>
+<p class="muted">Suas estações favoritas, de todos os municípios, pelo custo do cenário. Toque na ★ para tirar.</p>
+{% if not stations %}
+<div class="card">Nenhuma favorita ainda. Na lista de preços ou na página da estação, toque na ★.</div>
+{% endif %}
+<div class="grid">
+{% set show_municipio = true %}
+{% for s in stations %}{% include "_station_card.html" %}{% endfor %}
+</div>
+{% endblock %}

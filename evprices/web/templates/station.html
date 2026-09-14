@@ -5,8 +5,15 @@
   {% set bb = brand_badge(st.brand) %}{% set lg = brand_logo(st.brand) %}
   <div class="row brandline">{% if lg %}<img class="logo" src="{{ lg }}" alt="{{ st.brand or 'tupi' }}">{% else %}<span class="logo" style="background:{{ bb[1] }};color:{{ bb[2] }}">{{ bb[0] }}</span>{% endif %}
     <div class="grow"><div class="name" style="white-space:normal">{{ st.name }}</div></div>
-    <span class="chip">{{ st.brand or "tupi" }}</span></div>
-  <div class="muted">{{ st.address or "" }}</div>
+    <span class="chip">{{ st.brand or "tupi" }}</span>
+    <button class="star inline{% if st.favorite %} on{% endif %}" type="button" data-fav="{{ st.id }}" title="favorita" aria-pressed="{{ 'true' if st.favorite else 'false' }}">★</button></div>
+  {% set dest = (st.lat ~ "," ~ st.lon) if st.lat is not none and st.lon is not none else (st.address or st.name) %}
+  <div style="margin:6px 0">
+    <a class="maplink" href="https://www.google.com/maps/search/?api=1&query={{ dest|urlencode }}" data-dest="{{ dest }}" data-name="{{ st.name }}" target="_blank" rel="noopener">📍 {{ st.address or "ver no mapa" }}</a>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 8px">
+    <a class="btn small" href="https://www.google.com/maps/dir/?api=1&destination={{ dest|urlencode }}" data-dest="{{ dest }}" data-name="{{ st.name }}" data-dir="1" target="_blank" rel="noopener">🧭 Rotas</a>
+  </div>
   <div class="muted">{{ st.business_hours or "" }}{% if st.free_parking is not none %} · estacionamento {{ "grátis" if st.free_parking else "pago" }}{% endif %}
     · estado <span class="state-{{ st.state }}">{{ st.state or "?" }}</span></div>
   <div class="muted">{% if mun %}<a href="/?m={{ mun.id }}">{{ mun.nome }}/{{ mun.uf }}</a> · {% endif %}ID {{ st.external_id }} · visto {{ st.last_seen_at|dt }}</div>
@@ -34,5 +41,16 @@
 </table>
 </div>
 {% endfor %}
+<script>
+// iPhone/iPad: abre o Apple Mapas (que também oferece o Google Maps se instalado); resto: link universal do Google Maps,
+// que abre o app no Android e o site no desktop.
+(function () {
+  if (!/iPad|iPhone|iPod/.test(navigator.userAgent)) return;
+  document.querySelectorAll('a[data-dest]').forEach(a => {
+    const d = encodeURIComponent(a.dataset.dest), n = encodeURIComponent(a.dataset.name);
+    a.href = a.dataset.dir ? `https://maps.apple.com/?daddr=${d}&q=${n}` : `https://maps.apple.com/?ll=${d}&q=${n}`;
+  });
+})();
+</script>
 <p class="muted"><a href="/api/history/{{ connectors[0].id if connectors else 0 }}">JSON</a> · <a href="/">← voltar</a></p>
 {% endblock %}

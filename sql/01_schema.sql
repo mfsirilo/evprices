@@ -66,6 +66,12 @@ CREATE TABLE IF NOT EXISTS piscofins (
     PRIMARY KEY (sig_agente, competencia)
 );
 
+-- Estações favoritas (app pessoal, sem usuário: uma lista só, igual em todos os aparelhos).
+CREATE TABLE IF NOT EXISTS favorite (
+    station_id int PRIMARY KEY REFERENCES station (id) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- Pequeno armazém chave/valor (ex.: quando a base ANEEL foi atualizada pela última vez).
 CREATE TABLE IF NOT EXISTS kv (
     key   text PRIMARY KEY,

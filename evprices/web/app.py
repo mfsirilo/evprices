@@ -144,17 +144,34 @@ def _prices_params(sc: dict[str, float], municipio_id: int) -> dict[str, Any]:
     return {**sc, "municipio": municipio_id, "min_kw": settings.min_power_kw}
 
 
-def _grouped_prices(sc: dict[str, float], municipio_id: int) -> list[dict[str, Any]]:
-    """Agrupa conectores iguais (mesmo plug/potência/tarifa) dentro da estação; ordena estação pelo menor total."""
+FAV_PRICES_SQL = PRICES_SQL.replace("WHERE cp.municipio_id = %(municipio)s AND",
+                                    "WHERE cp.station_id IN (SELECT station_id FROM favorite) AND")
+
+
+def _favorites(conn) -> set[int]:
+    return {r["station_id"] for r in conn.execute("SELECT station_id FROM favorite")}
+
+
+def _grouped_prices(sc: dict[str, float], municipio_id: int | None, favorites_only: bool = False) -> list[dict[str, Any]]:
+    """Agrupa conectores iguais (mesmo plug/potência/tarifa) dentro da estação; ordena estação pelo menor total.
+    municipio_id=None + favorites_only => favoritas de todos os municípios."""
     with db.connect() as conn:
-        rows = conn.execute(PRICES_SQL, _prices_params(sc, municipio_id)).fetchall()
+        favs = _favorites(conn)
+        if municipio_id is None:
+            rows = conn.execute(FAV_PRICES_SQL, {**sc, "min_kw": settings.min_power_kw}).fetchall()
+        else:
+            rows = conn.execute(PRICES_SQL, _prices_params(sc, municipio_id)).fetchall()
     stations: dict[int, dict[str, Any]] = {}
     for r in rows:
+        if favorites_only and r["station_id"] not in favs:
+            continue
         st = stations.setdefault(
             r["station_id"],
             {
                 "station_id": r["station_id"], "station": r["station"], "brand": r["brand"],
                 "address": r["address"], "business_hours": r["business_hours"],
+                "municipio": r["municipio"], "uf": r["uf"], "municipio_id": r["municipio_id"],
+                "favorite": r["station_id"] in favs,
                 "last_seen_at": r["station_last_seen_at"], "best_total": None, "options": {},
             },
         )
@@ -180,7 +197,8 @@ def _grouped_prices(sc: dict[str, float], municipio_id: int) -> list[dict[str, A
 # ---------- páginas ----------
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, m: int | None = Query(None), kwh: float | None = Query(None, ge=0),
-          charge_min: float | None = Query(None, ge=0), idle_min: float | None = Query(None, ge=0)):
+          charge_min: float | None = Query(None, ge=0), idle_min: float | None = Query(None, ge=0),
+          fav: int = Query(0)):
     sc = _scenario(kwh, charge_min, idle_min)
     mid = _selected_municipio(request, m)
     mun, stations, last_run = None, [], None
@@ -190,14 +208,14 @@ def index(request: Request, m: int | None = Query(None), kwh: float | None = Que
             mun = _municipio(conn, mid)
     home = None
     if mun:
-        stations = _grouped_prices(sc, mun["id"])
+        stations = _grouped_prices(sc, mun["id"], favorites_only=bool(fav))
         with db.connect() as conn:
             last_run = conn.execute(
                 "SELECT * FROM observation_run WHERE municipio_id = %s ORDER BY started_at DESC LIMIT 1", (mun["id"],)
             ).fetchone()
             home = home_tariff.home_now(conn, mun.get("distribuidora"), mun.get("uf"))
     resp = templates.TemplateResponse(
-        request, "index.html", {"stations": stations, "sc": sc, "last_run": last_run, "mun": mun, "ufs": ufs, "home": home}
+        request, "index.html", {"stations": stations, "sc": sc, "last_run": last_run, "mun": mun, "ufs": ufs, "home": home, "fav": fav}
     )
     if m is not None and mun:   # ?m= vira o padrão nas próximas visitas
         resp.set_cookie("municipio", str(mun["id"]), max_age=365 * 86400, samesite="lax")
@@ -285,6 +303,35 @@ def api_evolution(municipio: int):
         return {"municipio": municipio, "stations": stations, "home": _home_for(conn, mun, stations)}
 
 
+@app.get("/favoritas", response_class=HTMLResponse)
+def favoritas_page(request: Request, kwh: float | None = Query(None, ge=0), charge_min: float | None = Query(None, ge=0),
+                   idle_min: float | None = Query(None, ge=0)):
+    sc = _scenario(kwh, charge_min, idle_min)
+    stations = _grouped_prices(sc, None, favorites_only=True)
+    return templates.TemplateResponse(request, "favoritas.html", {"stations": stations, "sc": sc})
+
+
+@app.get("/api/favorites")
+def api_favorites():
+    with db.connect() as conn:
+        return conn.execute(
+            "SELECT f.station_id, s.name, s.brand, s.address, s.municipio_id, f.created_at "
+            "FROM favorite f JOIN station s ON s.id = f.station_id ORDER BY s.name").fetchall()
+
+
+@app.post("/api/station/{station_id}/favorite")
+def api_toggle_favorite(station_id: int):
+    """Alterna: vira favorita se não era, deixa de ser se era."""
+    with db.connect() as conn:
+        if not conn.execute("SELECT 1 FROM station WHERE id = %s", (station_id,)).fetchone():
+            raise HTTPException(404)
+        removed = conn.execute("DELETE FROM favorite WHERE station_id = %s", (station_id,)).rowcount
+        if not removed:
+            conn.execute("INSERT INTO favorite (station_id) VALUES (%s)", (station_id,))
+        conn.commit()
+    return {"station_id": station_id, "favorite": not removed}
+
+
 @app.get("/municipios", response_class=HTMLResponse)
 def municipios_page(request: Request):
     with db.connect() as conn:
@@ -302,6 +349,7 @@ def station_page(request: Request, station_id: int):
         if not st:
             raise HTTPException(404)
         mun = _municipio(conn, st["municipio_id"]) if st["municipio_id"] else None
+        st["favorite"] = station_id in _favorites(conn)
         connectors = conn.execute(
             "SELECT * FROM connector WHERE station_id = %s ORDER BY external_id", (station_id,)
         ).fetchall()

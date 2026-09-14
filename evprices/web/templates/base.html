@@ -81,6 +81,16 @@
   .btn.ghost { background: var(--chip); color: var(--fg); }
   .btn.small { font-size: 13px; padding: 6px 10px; }
   .btn:disabled { opacity: .5; }
+  .stcard { position: relative; }
+  .stcard .cover { position: absolute; inset: 0; z-index: 1; border-radius: 14px; }
+  .stcard .cover:active { background: rgba(0,0,0,.04); }
+  .star { position: absolute; top: 8px; right: 8px; z-index: 2; width: 36px; height: 36px; border: 0; border-radius: 50%;
+          background: var(--chip); color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
+  .star.on { color: #eda100; }
+  .star.inline { position: static; flex: none; }
+  .stcard .brandline { padding-right: 36px; }
+  .btn.active { background: var(--accent); color: #fff; }
+  a.maplink { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
   .munbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .munbar .name { font-size: 18px; }
   .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--muted); border-top-color: transparent;
@@ -92,11 +102,20 @@
 <body>
 <header class="top">
   <h1><a href="/">⚡ evprices</a></h1>
-  <nav><a href="/">Preços</a><a href="/evolucao">Evolução</a><a href="/municipios">Municípios</a><a href="/runs">Coletas</a></nav>
+  <nav><a href="/">Preços</a><a href="/evolucao">Evolução</a><a href="/favoritas">★</a><a href="/municipios">Municípios</a><a href="/runs">Coletas</a></nav>
 </header>
 <main>{% block content %}{% endblock %}</main>
 <script>
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw', {scope: '/'}).catch(() => {});
+// ★ favorita: alterna no servidor (uma lista só, igual em todos os aparelhos)
+document.addEventListener('click', async e => {
+  const b = e.target.closest('button[data-fav]'); if (!b) return;
+  e.preventDefault(); b.disabled = true;
+  try {
+    const r = await fetch('/api/station/' + b.dataset.fav + '/favorite', {method: 'POST'});
+    if (r.ok) { const j = await r.json(); b.classList.toggle('on', j.favorite); b.setAttribute('aria-pressed', j.favorite); }
+  } finally { b.disabled = false; }
+});
 </script>
 </body>
 </html>

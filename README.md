@@ -85,11 +85,13 @@ docker compose exec db psql -U evprices -d evprices                    # SQL dir
 |---|---|
 | `/` | seletor de município (cookie lembra o último) + ranking por cenário (`?m=5218805&kwh=30&charge_min=40&idle_min=10`) |
 | `/evolucao?m=ID` | gráfico: um painel por estação com a evolução do R$/kWh em degraus (escala comum ou por estação) |
+| `/favoritas` | estações marcadas com ★ (de todos os municípios) pelo custo do cenário; `/?fav=1` filtra o ranking |
 | `/municipios` | municípios monitorados, estado da coleta, parar/retomar |
-| `/station/{id}` | tomadas da estação + histórico de tarifas |
+| `/station/{id}` | tomadas da estação + histórico de tarifas; endereço abre o app de mapas (Google/Apple) e botão de rotas |
 | `/runs` | log das coletas (por município e fonte) |
 | `/api/ufs`, `/api/municipios?uf=GO&q=rio` | listas para o seletor |
 | `/api/municipio/locate?lat=&lon=` | GPS → município |
+| `/api/favorites` · `POST /api/station/{id}/favorite` | lista / alterna favorita (uma lista só, sem usuário) |
 | `/api/municipio/{id}` · `POST …/select` · `POST …/unmonitor` | estado / monitorar + coletar agora / parar |
 | `/api/evolution?municipio=ID` | JSON das séries de R$/kWh por estação + série "casa" (o que alimenta `/evolucao`) |
 | `/api/prices?municipio=ID` | JSON da view `current_prices` + custo estimado (para Home Assistant/Grafana) |
