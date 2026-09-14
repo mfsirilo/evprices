@@ -1,7 +1,7 @@
 /* evprices — service worker.
    Páginas: rede primeiro, cai para a última cópia em cache (ou /offline) sem conexão.
    /static: cache primeiro. /api e POST: nunca em cache (dados vivos). */
-const VERSION = 'evprices-v14';
+const VERSION = 'evprices-v15';
 const PRECACHE = ['/offline', '/static/pwa/manifest.webmanifest', '/static/pwa/icon-192.png', '/static/pwa/icon-512.png'];
 
 self.addEventListener('install', e => {

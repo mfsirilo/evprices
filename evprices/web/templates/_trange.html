@@ -6,7 +6,7 @@
     <label for="to">Para</label><input type="text" id="to" name="to" value="{{ rng.to }}" autocomplete="off" spellcheck="false" class="{% if rng.error %}bad{% endif %}">
     <button class="btn small" type="submit">Aplicar</button>
   </form>
-  <div class="now">{% if rng.error %}<span class="fee-bad">{{ rng.error }} — usando os últimos 30 dias.</span> {% endif %}Período: <b>{{ rng.label }}</b>
+  <div class="now">{% if rng.error %}<span class="fee-bad">{{ rng.error }} — usando as últimas 12 horas.</span> {% endif %}Período: <b>{{ rng.label }}</b>
     · aceita <code>1h</code>, <code>now-7d</code>, <code>now/M</code>, <code>now-1M/M</code> ou <code>2026-09-01 14:00</code> (unidades: m h d w M y)</div>
   <details>
     <summary>Períodos rápidos</summary>

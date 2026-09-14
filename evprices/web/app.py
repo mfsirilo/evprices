@@ -316,11 +316,11 @@ def _home_for(conn, mun: dict[str, Any] | None, stations: list[dict[str, Any]], 
 
 
 RANGE_COOKIE = "evo_range"
-DEFAULT_RANGE = ("now-30d", "now")
+DEFAULT_RANGE = ("now-12h", "now")
 
 
 def _page_range(request: Request, from_: str | None, to: str | None) -> tuple[dict[str, Any], bool]:
-    """Período estilo Zabbix (?from=now-7d&to=now). Sem parâmetros: última escolha (cookie) ou 30 dias.
+    """Período estilo Zabbix (?from=now-7d&to=now). Sem parâmetros: última escolha (cookie) ou as últimas 12 horas.
     Retorna (rng, veio_do_formulário); rng.start/end são datetimes; rng.error explica expressão inválida."""
     from_form = from_ is not None or to is not None
     if not from_form:
