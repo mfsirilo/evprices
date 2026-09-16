@@ -100,6 +100,32 @@ para a estação equivalente. `/operadores`
 lista todas as contas por plataforma e as plataformas que ainda **faltam a chave do app** (Voltbras, EZVolt/MyCharge,
 movE). `python -m evprices.run sync-oncharge` força um ciclo à mão (depuração).
 
+## Viagens (plano de paradas)
+
+`/viagens`: escolha origem e destino (município, ou "partir de onde estou" pelo GPS) e o app grava a **rota rodoviária**
+(OSRM público `router.project-osrm.org`, uma chamada por viagem, `OSRM_URL` para um servidor próprio; a sede do
+município vem do Nominatim, com o centroide da malha como reserva). A página da viagem então:
+
+1. **Corredor**: municípios a até `TRIP_CORRIDOR_KM` da rota (buffer no PostGIS), com o estado da coleta de cada um.
+   O botão "coletar os N que faltam" marca-os como monitorados e pede coleta — a coleta continua sendo por município,
+   pelo collector, e a página se atualiza quando termina.
+2. **Veículo** (`/veiculos`, tabela `vehicle`): bateria útil, consumo em estrada, potência DC máxima, plugues, reserva
+   mínima e teto de carga (o padrão é o BYD Dolphin GS). Parâmetros por viagem: SoC na saída, data/hora, valor da sua hora,
+   desvio máximo, preço presumido para estação sem preço, usar/não usar tomadas ocupadas ou sem preço.
+3. **Plano**: candidatas = estações a até `TRIP_DETOUR_KM` da rota com tomada compatível (> `MIN_POWER_KW`), posicionadas
+   pelo km ao longo da rota. O otimizador é um caminho mínimo sobre estados (estação, SoC em passos de 2 %): em cada
+   parada carrega "só o necessário para a próxima", até 80 % ou até o teto (as três opções que bastam quando o preço
+   varia entre postos). Custo = **R$** (preço na janela de horário da chegada estimada + ativação, com 5 % de perda)
+   **+ valor da hora × tempo extra** (recarga com potência plena até 80 % e 40 % dela acima, espera presumida de 15 min
+   se todas as tomadas estão ocupadas, desvio = 2 × distância em linha reta × 1,3 a 40 km/h, minutos fixos por parada).
+   Tomada `Unavailable/Faulted/Maintenance` não entra; sem preço entra com o 90º percentil do corredor, marcada "≈".
+   Saída: paradas com SoC chegada → saída, kWh, minutos, R$, hora estimada, link do Google Maps com as paradas como
+   waypoints, e a lista de todas as candidatas do corredor. Sem plano viável, mostra os **trechos sem estação alcançável**.
+   `GET /api/trip/{id}/plan` devolve o mesmo em JSON; `GET /api/trip/{id}/route` a rota em GeoJSON.
+
+Limites conhecidos: o desvio é estimado (não roteado), a curva de carga é genérica, o estado da tomada é o da última
+coleta (não é tempo real) e o corredor só tem estação onde houve coleta.
+
 ## Referência "em casa" (tarifa da distribuidora)
 
 O ranking e o gráfico mostram quanto custa o kWh **na sua casa**, para comparar com o eletroposto:
@@ -165,6 +191,9 @@ docker compose exec db psql -U evprices -d evprices                    # SQL dir
 | `/api/operators` | JSON do estado dos operadores (sem segredos) |
 | `/station/{id}` | tomadas da estação + histórico de tarifas; endereço abre o app de mapas (Google/Apple) e botão de rotas |
 | `/runs` | log das coletas (por município e fonte) |
+| `/viagens` · `/viagens/{id}` | viagens salvas + nova (`POST`); plano de paradas (`?v=&soc=&soc_min=&soc_max=&kwh100=&hv=&depart=&detour=&unpriced=&busy=&assumed=`); `POST …/corredor` (coletar), `…/rota` (recalcular), `…/excluir` |
+| `/veiculos` | veículos (bateria, consumo, DC máx., plugues, reserva/teto); `POST` grava/remove |
+| `/api/trip/{id}/plan` · `/api/trip/{id}/route` | plano em JSON (mesmos parâmetros) · rota em GeoJSON |
 | `/api/ufs`, `/api/municipios?uf=GO&q=rio` | listas para o seletor |
 | `/api/municipio/locate?lat=&lon=` | GPS → município |
 | `/api/favorites` · `POST /api/station/{id}/favorite` | lista / alterna favorita (uma lista só, sem usuário) |

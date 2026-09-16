@@ -107,12 +107,26 @@
                     background: var(--card); color: var(--fg); }
   form.cred .actions { display: flex; gap: 8px; align-items: center; }
   .ok-msg { color: var(--good); font-size: 14px; }
+  /* viagens */
+  .grid3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  form.cred select { width: 100%; font-size: 16px; padding: 9px; border: 1px solid var(--line); border-radius: 10px;
+                     background: var(--card); color: var(--fg); }
+  form.cred input[type=checkbox] { width: auto; margin-right: 4px; }
+  form.cred label:has(input[type=checkbox]) { display: inline-flex; align-items: center; font-size: 14px; color: var(--fg); }
+  .tripsel label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+  .timeline { position: relative; padding-left: 18px; }
+  .timeline::before { content: ""; position: absolute; left: 6px; top: 8px; bottom: 8px; border-left: 2px dashed var(--line); }
+  .tl-node { position: relative; padding: 6px 0 10px; }
+  .tl-dot { position: absolute; left: -17px; top: 11px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+  .tl-stop { position: relative; }
+  .tl-stop::before { content: ""; position: absolute; left: -16px; top: 18px; width: 10px; height: 10px; border-radius: 50%;
+                     background: var(--card); border: 2px solid var(--accent); }
 </style>
 </head>
 <body>
 <header class="top">
   <h1><a href="/">⚡ evprices</a></h1>
-  <nav><a href="/">Preços</a><a href="/evolucao">Evolução</a><a href="/favoritas">★</a><a href="/municipios">Municípios</a><a href="/runs">Coletas</a><a href="/operadores" title="login dos operadores">🔑</a></nav>
+  <nav><a href="/">Preços</a><a href="/evolucao">Evolução</a><a href="/favoritas">★</a><a href="/viagens">Viagens</a><a href="/municipios">Municípios</a><a href="/runs">Coletas</a><a href="/operadores" title="login dos operadores">🔑</a></nav>
 </header>
 <main>{% block content %}{% endblock %}</main>
 <script>

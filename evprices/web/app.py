@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .. import db, home_tariff, operators, timerange
+from .. import db, home_tariff, operators, timerange, trip as trips_
 from ..config import settings
 from ..municipios import slug as busca_slug
 
@@ -36,7 +36,7 @@ def brl(v: Any, digits: int = 2) -> str:
 def num(v: Any) -> str:
     if v is None:
         return "—"
-    d = Decimal(v)
+    d = Decimal(repr(v)) if isinstance(v, float) else Decimal(v)   # float pelo repr: 44.9, não 44.8999999…
     return str(d.normalize()).replace(".", ",") if d != d.to_integral() else str(int(d))
 
 
@@ -99,7 +99,19 @@ def brand_logo(brand: str | None) -> str | None:
     return f"/static/brands/{f}" if f else None
 
 
-templates.env.filters.update(brl=brl, num=num, dt=dt, date=date_)
+def hm(minutes: Any) -> str:
+    """Minutos -> '1h05' / '35 min'."""
+    if minutes is None:
+        return "—"
+    m = int(round(float(minutes)))
+    return f"{m // 60}h{m % 60:02d}" if m >= 60 else f"{m} min"
+
+
+def pct(v: Any) -> str:
+    return "—" if v is None else f"{round(float(v) * 100)}%"
+
+
+templates.env.filters.update(brl=brl, num=num, dt=dt, date=date_, hm=hm, pct=pct)
 templates.env.globals.update(idle_desc=idle_desc, settings=settings, brand_badge=brand_badge, brand_logo=brand_logo)
 
 
@@ -700,6 +712,186 @@ def api_summary(municipio: int, kwh: float | None = None, charge_min: float | No
 
 
 # ---------- PWA ----------
+# ---------- viagens ----------
+def _trip_params(request: Request, v: int | None, soc: int | None, soc_min: int | None, soc_max: int | None,
+                 kwh100: float | None, hv: float | None, depart: str | None, detour: float | None, unpriced: int | None,
+                 busy: int | None, assumed: float | None) -> trips_.PlanParams:
+    dep = None
+    if depart:
+        try:
+            dep = datetime.fromisoformat(depart).replace(tzinfo=TZ)
+        except ValueError:
+            dep = None
+    return trips_.PlanParams(
+        soc_start_pct=soc if soc is not None else 100, soc_min_pct=soc_min, soc_max_pct=soc_max, kwh_100km=kwh100 or None,
+        hour_value=hv if hv is not None else settings.trip_hour_value, depart=dep, detour_km=detour or None,
+        include_unpriced=bool(unpriced) if unpriced is not None else True,
+        include_busy=bool(busy) if busy is not None else True, assumed_price_kwh=assumed or None)
+
+
+def _trip_page_data(conn, t: dict[str, Any], pp: trips_.PlanParams, vehicle_id: int | None) -> dict[str, Any]:
+    veh = trips_.vehicle(conn, vehicle_id)
+    if not veh:
+        raise HTTPException(409, "cadastre um veículo em /veiculos")
+    cor = trips_.corridor(conn, t["id"])
+    cands = trips_.candidates(conn, t["id"], veh, pp.detour_km)
+    plan = trips_.plan(t, veh, cands, pp)
+    chosen = {s.station["station_id"] for s in plan.stops}
+    cov = {
+        "total": len(cor),
+        "collected": sum(1 for m in cor if m["last_collected_at"]),
+        "collecting": sum(1 for m in cor if m["collecting_since"] or m["collect_requested_at"]),
+        "pending": sum(1 for m in cor if not (m["monitored"] and m["last_collected_at"])),
+    }
+    wp = "|".join(f"{s.station['lat']},{s.station['lon']}" for s in plan.stops[:9])
+    maps = (f"https://www.google.com/maps/dir/?api=1&origin={t['origin_lat']},{t['origin_lon']}"
+            f"&destination={t['dest_lat']},{t['dest_lon']}" + (f"&waypoints={wp}" if wp else ""))
+    return {"t": t, "veh": veh, "vehicles": trips_.vehicles(conn), "cor": cor, "cov": cov, "cands": cands, "plan": plan,
+            "chosen": chosen, "pp": pp, "maps": maps}
+
+
+@app.get("/viagens", response_class=HTMLResponse)
+def viagens_page(request: Request, err: str | None = Query(None)):
+    with db.connect() as conn:
+        ufs = conn.execute("SELECT id, sigla, nome FROM uf ORDER BY sigla").fetchall()
+        rows = trips_.trips(conn)
+        vs = trips_.vehicles(conn)
+    return templates.TemplateResponse(request, "viagens.html", {"ufs": ufs, "trips": rows, "vehicles": vs, "err": err})
+
+
+@app.post("/viagens")
+def viagens_create(origin: int = Form(...), dest: int = Form(...), origin_lat: str = Form(""), origin_lon: str = Form(""),
+                   name: str = Form("")):
+    try:   # campos ocultos chegam como "" quando o GPS não foi usado
+        o = (float(origin_lat), float(origin_lon)) if origin_lat and origin_lon else None
+    except ValueError:
+        o = None
+    try:
+        with db.connect() as conn:
+            tid = trips_.create_trip(conn, origin, dest, origin=o, name=name.strip() or None)
+    except (ValueError, LookupError, RuntimeError) as e:
+        return RedirectResponse(f"/viagens?err={e}", status_code=303)
+    return RedirectResponse(f"/viagens/{tid}", status_code=303)
+
+
+@app.get("/viagens/{trip_id}", response_class=HTMLResponse)
+def viagem_page(request: Request, trip_id: int, v: int | None = Query(None), soc: int | None = Query(None, ge=0, le=100),
+                soc_min: int | None = Query(None, ge=0, le=100), soc_max: int | None = Query(None, ge=0, le=100),
+                kwh100: float | None = Query(None, ge=0), hv: float | None = Query(None, ge=0), depart: str | None = Query(None),
+                detour: float | None = Query(None, ge=0, le=50), unpriced: int | None = Query(None), busy: int | None = Query(None),
+                assumed: float | None = Query(None, ge=0), ok: str | None = Query(None)):
+    pp = _trip_params(request, v, soc, soc_min, soc_max, kwh100, hv, depart, detour, unpriced, busy, assumed)
+    with db.connect() as conn:
+        t = trips_.trip(conn, trip_id)
+        if not t:
+            raise HTTPException(404)
+        data = _trip_page_data(conn, t, pp, v)
+    data["ok"] = ok
+    data["depart_value"] = (pp.depart or datetime.now(TZ)).strftime("%Y-%m-%dT%H:%M")
+    return templates.TemplateResponse(request, "viagem.html", data)
+
+
+@app.post("/viagens/{trip_id}/corredor")
+def viagem_corredor(trip_id: int):
+    with db.connect() as conn:
+        if not trips_.trip(conn, trip_id):
+            raise HTTPException(404)
+        n = trips_.request_corridor_collection(conn, trip_id)
+    return RedirectResponse(f"/viagens/{trip_id}?ok=coleta pedida para {n} município(s) do corredor", status_code=303)
+
+
+@app.post("/viagens/{trip_id}/rota")
+def viagem_rota(trip_id: int):
+    try:
+        with db.connect() as conn:
+            trips_.reroute(conn, trip_id)
+    except (LookupError, RuntimeError) as e:
+        return RedirectResponse(f"/viagens/{trip_id}?ok=rota NÃO recalculada: {e}", status_code=303)
+    return RedirectResponse(f"/viagens/{trip_id}?ok=rota recalculada", status_code=303)
+
+
+@app.post("/viagens/{trip_id}/excluir")
+def viagem_excluir(trip_id: int):
+    with db.connect() as conn:
+        trips_.delete_trip(conn, trip_id)
+    return RedirectResponse("/viagens", status_code=303)
+
+
+@app.get("/api/trip/{trip_id}/plan")
+def api_trip_plan(trip_id: int, v: int | None = None, soc: int | None = None, soc_min: int | None = None,
+                  soc_max: int | None = None, kwh100: float | None = None, hv: float | None = None, depart: str | None = None,
+                  detour: float | None = None, unpriced: int | None = None, busy: int | None = None, assumed: float | None = None):
+    pp = _trip_params(None, v, soc, soc_min, soc_max, kwh100, hv, depart, detour, unpriced, busy, assumed)   # type: ignore[arg-type]
+    with db.connect() as conn:
+        t = trips_.trip(conn, trip_id)
+        if not t:
+            raise HTTPException(404)
+        d = _trip_page_data(conn, t, pp, v)
+    p = d["plan"]
+    return {
+        "trip": {k: t[k] for k in ("id", "name", "distance_m", "duration_s", "origin_lat", "origin_lon", "dest_lat", "dest_lon")},
+        "vehicle": d["veh"].__dict__, "coverage": d["cov"], "ok": p.ok, "reason": p.reason, "gaps": p.gaps,
+        "money": round(p.money, 2), "kwh_billed": round(p.kwh_billed, 1), "charge_min": round(p.charge_min),
+        "wait_min": round(p.wait_min), "detour_min": round(p.detour_min), "drive_min": round(p.drive_min),
+        "arrive_soc": p.arrive_soc, "arrive_at": p.arrive_at, "assumed_price_kwh": p.assumed_price_kwh,
+        "stops": [{"station_id": s.station["station_id"], "name": s.station["name"], "brand": s.station["brand"],
+                   "source": s.station["source"], "municipio": s.station["municipio"], "uf": s.station["uf"],
+                   "lat": s.station["lat"], "lon": s.station["lon"], "km": round(s.km, 1), "detour_km": round(s.detour_km, 1),
+                   "connector_id": s.option["connector_id"], "plug_type": s.option["plug_type"], "power_kw": s.option["power_kw"],
+                   "arrive_at": s.arrive_at, "arrive_soc": s.arrive_soc, "leave_soc": s.leave_soc,
+                   "kwh_billed": round(s.kwh_billed, 1), "charge_min": round(s.charge_min), "wait_min": round(s.wait_min),
+                   "price_kwh": s.price_kwh, "assumed": s.assumed, "money": round(s.money, 2)} for s in p.stops],
+        "maps": d["maps"],
+    }
+
+
+@app.get("/api/trip/{trip_id}/coverage")
+def api_trip_coverage(trip_id: int):
+    """Só a contagem do corredor (a página da viagem consulta enquanto a coleta anda)."""
+    with db.connect() as conn:
+        if not trips_.trip(conn, trip_id):
+            raise HTTPException(404)
+        cor = trips_.corridor(conn, trip_id)
+    return {"total": len(cor), "collected": sum(1 for m in cor if m["last_collected_at"]),
+            "collecting": sum(1 for m in cor if m["collecting_since"] or m["collect_requested_at"])}
+
+
+@app.get("/api/trip/{trip_id}/route")
+def api_trip_route(trip_id: int):
+    with db.connect() as conn:
+        g = trips_.route_geojson(conn, trip_id)
+    if not g:
+        raise HTTPException(404)
+    return g
+
+
+# ---------- veículos ----------
+@app.get("/veiculos", response_class=HTMLResponse)
+def veiculos_page(request: Request, ok: str | None = Query(None), err: str | None = Query(None)):
+    with db.connect() as conn:
+        vs = trips_.vehicles(conn)
+        plugs = [r["plug_type"] for r in conn.execute(
+            "SELECT DISTINCT plug_type FROM connector WHERE plug_type IS NOT NULL ORDER BY plug_type")]
+    return templates.TemplateResponse(request, "veiculos.html", {"vehicles": vs, "plugs": plugs, "ok": ok, "err": err})
+
+
+@app.post("/veiculos")
+def veiculos_save(id: int | None = Form(None), name: str = Form(""), battery_kwh: float = Form(0), kwh_100km: float = Form(0),
+                  max_dc_kw: float = Form(0), plug_types: list[str] = Form([]), soc_min_pct: int = Form(10),
+                  soc_max_pct: int = Form(90), is_default: int = Form(0), action: str = Form("save")):
+    try:
+        with db.connect() as conn:
+            if action == "delete" and id is not None:
+                trips_.delete_vehicle(conn, id)
+                return RedirectResponse("/veiculos?ok=veículo removido", status_code=303)
+            trips_.save_vehicle(conn, id, name=name, battery_kwh=battery_kwh, kwh_100km=kwh_100km, max_dc_kw=max_dc_kw,
+                                plug_types=plug_types, soc_min_pct=soc_min_pct, soc_max_pct=soc_max_pct,
+                                is_default=bool(is_default))
+    except ValueError as e:
+        return RedirectResponse(f"/veiculos?err={e}", status_code=303)
+    return RedirectResponse("/veiculos?ok=veículo salvo", status_code=303)
+
+
 @app.get("/sw", include_in_schema=False)
 @app.get("/sw.js", include_in_schema=False)
 def service_worker():

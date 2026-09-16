@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}evprices — viagens{% endblock %}
+{% block content %}
+<p class="muted">Rota rodoviária entre dois municípios e o plano de paradas para recarga: onde parar, quanto carregar e quanto
+  custa, considerando preço, potência e estado das tomadas (última coleta) e a autonomia do
+  <a class="maplink" href="/veiculos">veículo</a>.</p>
+{% if err %}<div class="card fee-bad">⚠️ {{ err }}</div>{% endif %}
+
+<div class="card">
+  <form class="cred" method="post" action="/viagens" id="trip-form" autocomplete="off">
+    <div class="tripsel">
+      <label>Origem</label>
+      <div class="picker">
+        <select id="o-uf" aria-label="UF de origem"><option value="">UF</option>{% for u in ufs %}<option value="{{ u.sigla }}">{{ u.sigla }}</option>{% endfor %}</select>
+        <input id="o-q" list="o-list" placeholder="Município de origem…" inputmode="search" disabled><datalist id="o-list"></datalist>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn ghost small" type="button" id="o-gps">📍 partir de onde estou</button><span class="muted" id="o-out"></span>
+      </div>
+    </div>
+    <div class="tripsel">
+      <label>Destino</label>
+      <div class="picker">
+        <select id="d-uf" aria-label="UF de destino"><option value="">UF</option>{% for u in ufs %}<option value="{{ u.sigla }}">{{ u.sigla }}</option>{% endfor %}</select>
+        <input id="d-q" list="d-list" placeholder="Município de destino…" inputmode="search" disabled><datalist id="d-list"></datalist>
+      </div>
+    </div>
+    <input type="hidden" name="origin" id="origin"><input type="hidden" name="dest" id="dest">
+    <input type="hidden" name="origin_lat" id="origin_lat"><input type="hidden" name="origin_lon" id="origin_lon">
+    <div class="actions"><button class="btn" type="submit" id="go" disabled>Calcular rota</button>
+      <span class="muted">a rota vem do OSRM; o plano é calculado com o que já está no banco</span></div>
+  </form>
+</div>
+
+<h2>Viagens salvas</h2>
+{% for t in trips %}
+<a class="card" href="/viagens/{{ t.id }}">
+  <div class="row"><div class="grow"><div class="name">{{ t.name }}</div>
+    <div class="muted">{{ (t.distance_m / 1000)|round(0)|int }} km · {{ (t.duration_s / 60)|hm }} de estrada · rota de {{ t.routed_at|dt }}</div></div>
+    <span class="chip">ver plano</span></div>
+</a>
+{% else %}
+<div class="card muted">nenhuma viagem ainda.</div>
+{% endfor %}
+<p class="muted"><a href="/veiculos">🚗 veículos</a></p>
+
+<script>
+(function () {
+  const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  const go = document.getElementById('go');
+  function picker(p, hidden) {
+    const uf = document.getElementById(p + '-uf'), q = document.getElementById(p + '-q'), list = document.getElementById(p + '-list');
+    let items = [];
+    async function load() {
+      q.value = ''; hidden.value = ''; list.innerHTML = ''; check();
+      if (!uf.value) { q.disabled = true; return; }
+      q.disabled = true; q.placeholder = 'carregando…';
+      items = await (await fetch('/api/municipios?uf=' + uf.value)).json();
+      list.innerHTML = items.map(m => `<option value="${m.nome}">`).join('');
+      q.disabled = false; q.placeholder = 'Município…'; q.focus();
+    }
+    function match() { return items.find(m => norm(m.nome) === norm(q.value)); }
+    uf.addEventListener('change', load);
+    q.addEventListener('input', () => { const m = match(); hidden.value = m ? m.id : ''; check(); });
+    return {uf, q, load, set: async (m) => { uf.value = m.uf; await load(); q.value = m.nome; hidden.value = m.id; check(); }};
+  }
+  const origin = document.getElementById('origin'), dest = document.getElementById('dest');
+  function check() { go.disabled = !(origin.value && dest.value); }
+  const o = picker('o', origin); picker('d', dest);
+  document.getElementById('o-gps').addEventListener('click', () => {
+    const out = document.getElementById('o-out');
+    if (!navigator.geolocation || !window.isSecureContext) { out.textContent = 'GPS só em HTTPS (ou localhost).'; return; }
+    out.innerHTML = '<span class="spin"></span> localizando…';
+    navigator.geolocation.getCurrentPosition(async pos => {
+      const {latitude: lat, longitude: lon} = pos.coords;
+      const r = await fetch(`/api/municipio/locate?lat=${lat}&lon=${lon}`);
+      if (!r.ok) { out.textContent = 'não achei um município para sua posição.'; return; }
+      const m = await r.json();
+      document.getElementById('origin_lat').value = lat; document.getElementById('origin_lon').value = lon;
+      await o.set(m); out.textContent = `partindo da sua posição em ${m.nome}/${m.uf}`;
+    }, err => { out.textContent = 'GPS negado ou indisponível (' + err.message + ').'; }, {timeout: 15000, maximumAge: 300000});
+  });
+  // troca manual do município de origem descarta a posição do GPS
+  o.q.addEventListener('input', () => { document.getElementById('origin_lat').value = ''; document.getElementById('origin_lon').value = ''; });
+})();
+</script>
+{% endblock %}

@@ -60,6 +60,13 @@ class Settings:
     oncharge_interval_min: float = field(
         default_factory=lambda: max(10.0, float(_env("ONCHARGE_INTERVAL_MIN", "10") or 10)))
 
+    # Viagens: roteador OSRM (público por padrão), largura do corredor e pesos do otimizador de paradas
+    osrm_url: str = field(default_factory=lambda: _env("OSRM_URL", "https://router.project-osrm.org"))
+    trip_corridor_km: float = field(default_factory=lambda: float(_env("TRIP_CORRIDOR_KM", "5")))   # municípios a até X km da rota
+    trip_detour_km: float = field(default_factory=lambda: float(_env("TRIP_DETOUR_KM", "5")))       # estações a até X km da rota
+    trip_hour_value: float = field(default_factory=lambda: float(_env("TRIP_HOUR_VALUE", "20")))    # R$ por hora parado/desviando
+    trip_stop_overhead_min: float = field(default_factory=lambda: float(_env("TRIP_STOP_OVERHEAD_MIN", "6")))
+
     default_kwh: float = field(default_factory=lambda: float(_env("DEFAULT_KWH", "30")))
     default_charge_min: float = field(default_factory=lambda: float(_env("DEFAULT_CHARGE_MIN", "40")))
     default_idle_min: float = field(default_factory=lambda: float(_env("DEFAULT_IDLE_MIN", "10")))

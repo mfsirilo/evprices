@@ -344,3 +344,40 @@ JOIN source so ON so.id = s.source_id
 LEFT JOIN municipio m ON m.id = s.municipio_id
 LEFT JOIN uf u ON u.id = m.uf_id
 LEFT JOIN tariff t ON t.connector_id = c.id AND t.valid_to IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- Viagens: veículo + rota gravada (OSRM) — o plano de paradas é calculado na hora, a partir das estações no banco.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS vehicle (
+    id            serial PRIMARY KEY,
+    name          text NOT NULL,
+    battery_kwh   numeric(6, 1) NOT NULL,           -- capacidade útil
+    kwh_100km     numeric(5, 1) NOT NULL,           -- consumo em estrada
+    max_dc_kw     numeric(6, 1) NOT NULL,           -- potência máxima que o carro aceita em DC
+    plug_types    text[] NOT NULL DEFAULT '{"CCS 2"}',
+    soc_min_pct   int NOT NULL DEFAULT 10,          -- reserva: nunca chegar abaixo disso
+    soc_max_pct   int NOT NULL DEFAULT 90,          -- teto de carga em viagem (acima de 80 % a potência cai)
+    is_default    boolean NOT NULL DEFAULT false,
+    updated_at    timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO vehicle (name, battery_kwh, kwh_100km, max_dc_kw, plug_types, is_default)
+SELECT 'BYD Dolphin GS', 44.9, 16.0, 60, '{"CCS 2"}', true
+ WHERE NOT EXISTS (SELECT 1 FROM vehicle);
+
+CREATE TABLE IF NOT EXISTS trip (
+    id                 serial PRIMARY KEY,
+    name               text NOT NULL,
+    origin_municipio_id int REFERENCES municipio (id),
+    dest_municipio_id   int REFERENCES municipio (id),
+    origin_lat         double precision NOT NULL,
+    origin_lon         double precision NOT NULL,
+    dest_lat           double precision NOT NULL,
+    dest_lon           double precision NOT NULL,
+    route              geometry(LineString, 4326) NOT NULL,   -- geometria da rota rodoviária
+    distance_m         int NOT NULL,
+    duration_s         int NOT NULL,
+    router             text,
+    routed_at          timestamptz NOT NULL DEFAULT now(),
+    created_at         timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS trip_route_gix ON trip USING gist (route);
