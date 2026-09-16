@@ -41,7 +41,7 @@ class Vehicle:
     id: int
     name: str
     battery_kwh: float
-    kwh_100km: float
+    kwh_100km: float           # consumo em estrada; autonomia cheia = battery_kwh / kwh_100km * 100
     max_dc_kw: float
     plug_types: list[str]
     soc_min_pct: int
@@ -49,13 +49,19 @@ class Vehicle:
     is_default: bool = False
 
     @property
-    def range_km(self) -> float:
-        """Autonomia útil entre o teto e a reserva (o que conta em viagem)."""
-        return (self.soc_max_pct - self.soc_min_pct) / 100 * self.battery_kwh / self.kwh_100km * 100
+    def full_range_km(self) -> float:
+        """Autonomia com bateria cheia (o número que se informa do carro)."""
+        return self.battery_kwh / self.kwh_100km * 100
 
     @property
-    def full_range_km(self) -> float:
-        return self.battery_kwh / self.kwh_100km * 100
+    def range_km(self) -> float:
+        """Autonomia útil entre o teto e a reserva (o que conta em viagem)."""
+        return (self.soc_max_pct - self.soc_min_pct) / 100 * self.full_range_km
+
+
+def consumption(battery_kwh: float, range_km: float) -> float:
+    """Autonomia informada (km cheios) -> kWh/100 km."""
+    return battery_kwh / range_km * 100
 
 
 def _vehicle(r: dict[str, Any]) -> Vehicle:
@@ -75,12 +81,18 @@ def vehicle(conn: psycopg.Connection, vehicle_id: int | None) -> Vehicle | None:
     return _vehicle(r) if r else None
 
 
-def save_vehicle(conn: psycopg.Connection, vehicle_id: int | None, *, name: str, battery_kwh: float, kwh_100km: float,
-                 max_dc_kw: float, plug_types: list[str], soc_min_pct: int, soc_max_pct: int, is_default: bool) -> int:
+def save_vehicle(conn: psycopg.Connection, vehicle_id: int | None, *, name: str, battery_kwh: float, range_km: float,
+                 kwh_100km: float | None, max_dc_kw: float, plug_types: list[str], soc_min_pct: int, soc_max_pct: int,
+                 is_default: bool) -> int:
+    """A autonomia (km com bateria cheia) manda; o consumo é derivado dela — a menos que só o consumo venha."""
     if not name.strip():
         raise ValueError("nome obrigatório")
-    if battery_kwh <= 0 or kwh_100km <= 0 or max_dc_kw <= 0:
-        raise ValueError("bateria, consumo e potência DC devem ser positivos")
+    if range_km > 0:
+        kwh_100km = consumption(battery_kwh, range_km) if battery_kwh > 0 else 0
+    elif kwh_100km and kwh_100km > 0 and battery_kwh > 0:
+        range_km = battery_kwh / kwh_100km * 100
+    if battery_kwh <= 0 or not kwh_100km or kwh_100km <= 0 or max_dc_kw <= 0:
+        raise ValueError("bateria, autonomia e potência DC devem ser positivos")
     if not 0 <= soc_min_pct < soc_max_pct <= 100:
         raise ValueError("reserva deve ser menor que o teto (0–100 %)")
     plugs = [p for p in plug_types if p] or ["CCS 2"]
@@ -88,14 +100,16 @@ def save_vehicle(conn: psycopg.Connection, vehicle_id: int | None, *, name: str,
         conn.execute("UPDATE vehicle SET is_default = false")
     if vehicle_id is None:
         vid = conn.execute(
-            "INSERT INTO vehicle (name, battery_kwh, kwh_100km, max_dc_kw, plug_types, soc_min_pct, soc_max_pct, is_default) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
-            (name.strip(), battery_kwh, kwh_100km, max_dc_kw, plugs, soc_min_pct, soc_max_pct, is_default)).fetchone()["id"]
+            "INSERT INTO vehicle (name, battery_kwh, kwh_100km, range_km, max_dc_kw, plug_types, soc_min_pct, soc_max_pct, "
+            "is_default) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (name.strip(), battery_kwh, kwh_100km, round(range_km), max_dc_kw, plugs, soc_min_pct, soc_max_pct, is_default)
+        ).fetchone()["id"]
     else:
         conn.execute(
-            "UPDATE vehicle SET name = %s, battery_kwh = %s, kwh_100km = %s, max_dc_kw = %s, plug_types = %s, "
+            "UPDATE vehicle SET name = %s, battery_kwh = %s, kwh_100km = %s, range_km = %s, max_dc_kw = %s, plug_types = %s, "
             "soc_min_pct = %s, soc_max_pct = %s, is_default = %s, updated_at = now() WHERE id = %s",
-            (name.strip(), battery_kwh, kwh_100km, max_dc_kw, plugs, soc_min_pct, soc_max_pct, is_default, vehicle_id))
+            (name.strip(), battery_kwh, kwh_100km, round(range_km), max_dc_kw, plugs, soc_min_pct, soc_max_pct, is_default,
+             vehicle_id))
         vid = vehicle_id
     # sempre existe um padrão
     conn.execute("UPDATE vehicle SET is_default = true WHERE id = (SELECT id FROM vehicle ORDER BY is_default DESC, id LIMIT 1) "
@@ -349,7 +363,7 @@ class PlanParams:
     soc_start_pct: int = 100
     soc_min_pct: int | None = None          # None = do veículo
     soc_max_pct: int | None = None
-    kwh_100km: float | None = None
+    kwh_100km: float | None = None          # sobrescreve o consumo do veículo (a UI deriva da autonomia informada)
     hour_value: float = settings.trip_hour_value       # R$/h de tempo extra (recarga + espera + desvio)
     stop_overhead_min: float = settings.trip_stop_overhead_min
     wait_busy_min: float = 15.0             # espera presumida quando todas as tomadas da opção estão ocupadas
@@ -398,6 +412,8 @@ class Plan:
     gaps: list[dict[str, Any]] = field(default_factory=list)
     assumed_price_kwh: float | None = None
     stop_overhead_min: float = 0.0
+    full_range_km: float = 0.0        # autonomia cheia com os parâmetros usados
+    useful_range_km: float = 0.0      # entre teto e reserva
 
     @property
     def total_min(self) -> float:
@@ -546,7 +562,8 @@ def plan(t: dict[str, Any], veh: Vehicle, cands: list[dict[str, Any]], pp: PlanP
                     pred[nk] = (key, (tsoc, info, kwh, drive, dmin))
                     heapq.heappush(heap, (nc, nk[0], nk[1]))
 
-    p = Plan(ok=best_dest is not None, gaps=gaps, assumed_price_kwh=assumed, stop_overhead_min=pp.stop_overhead_min)
+    p = Plan(ok=best_dest is not None, gaps=gaps, assumed_price_kwh=assumed, stop_overhead_min=pp.stop_overhead_min,
+             full_range_km=veh.battery_kwh / kwh_100 * 100, useful_range_km=max_leg_kwh / kwh_100 * 100)
     p.drive_min = t["duration_s"] / 60.0
     if best_dest is None:
         p.reason = ("sem estação alcançável em algum trecho" if gaps else "nenhum caminho com as opções disponíveis")

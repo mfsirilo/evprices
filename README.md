@@ -1,7 +1,7 @@
 # evprices — monitor pessoal de preços de recarga de VE
 
 Lista de preços e **histórico por tomada** dos carregadores **pagos, acima de 22 kW**, dentro do território
-do **município que você escolher** (lista UF → município ou GPS do aparelho). Uso estritamente pessoal.
+do **município que você escolher** (digite o nome — ou "nome/UF" — e escolha na lista; ou GPS do aparelho). Uso estritamente pessoal.
 Sem mapa, sem redistribuição.
 
 ## Como funciona
@@ -109,9 +109,11 @@ município vem do Nominatim, com o centroide da malha como reserva). A página d
 1. **Corredor**: municípios a até `TRIP_CORRIDOR_KM` da rota (buffer no PostGIS), com o estado da coleta de cada um.
    O botão "coletar os N que faltam" marca-os como monitorados e pede coleta — a coleta continua sendo por município,
    pelo collector, e a página se atualiza quando termina.
-2. **Veículo** (`/veiculos`, tabela `vehicle`): bateria útil, consumo em estrada, potência DC máxima, plugues, reserva
-   mínima e teto de carga (o padrão é o BYD Dolphin GS). Parâmetros por viagem: SoC na saída, data/hora, valor da sua hora,
-   desvio máximo, preço presumido para estação sem preço, usar/não usar tomadas ocupadas ou sem preço.
+2. **Veículo** (`/veiculos`, tabela `vehicle`): bateria útil, **autonomia real em estrada** com bateria cheia (o consumo
+   kWh/100 km é derivado dela — informe um e o outro se ajusta), potência DC máxima, plugues, reserva mínima e teto de
+   carga (o padrão é o BYD Dolphin GS). Parâmetros por viagem: SoC na saída, data/hora, autonomia/consumo para aquela
+   viagem (`range=`/`kwh100=`), valor da sua hora, desvio máximo, preço presumido para estação sem preço, usar/não usar
+   tomadas ocupadas ou sem preço. A página mostra a autonomia cheia e a útil (teto − reserva) com os parâmetros usados.
 3. **Plano**: candidatas = estações a até `TRIP_DETOUR_KM` da rota com tomada compatível (> `MIN_POWER_KW`), posicionadas
    pelo km ao longo da rota. O otimizador é um caminho mínimo sobre estados (estação, SoC em passos de 2 %): em cada
    parada carrega "só o necessário para a próxima", até 80 % ou até o teto (as três opções que bastam quando o preço
@@ -194,7 +196,7 @@ docker compose exec db psql -U evprices -d evprices                    # SQL dir
 | `/viagens` · `/viagens/{id}` | viagens salvas + nova (`POST`); plano de paradas (`?v=&soc=&soc_min=&soc_max=&kwh100=&hv=&depart=&detour=&unpriced=&busy=&assumed=`); `POST …/corredor` (coletar), `…/rota` (recalcular), `…/excluir` |
 | `/veiculos` | veículos (bateria, consumo, DC máx., plugues, reserva/teto); `POST` grava/remove |
 | `/api/trip/{id}/plan` · `/api/trip/{id}/route` | plano em JSON (mesmos parâmetros) · rota em GeoJSON |
-| `/api/ufs`, `/api/municipios?uf=GO&q=rio` | listas para o seletor |
+| `/api/ufs`, `/api/municipios?q=rio%20verde/go` | busca para o seletor (`q` = começo do nome, opcionalmente "nome/UF"; `uf=` filtra) |
 | `/api/municipio/locate?lat=&lon=` | GPS → município |
 | `/api/favorites` · `POST /api/station/{id}/favorite` | lista / alterna favorita (uma lista só, sem usuário) |
 | `/api/municipio/{id}` · `POST …/select` · `POST …/unmonitor` | estado / monitorar + coletar agora / parar |

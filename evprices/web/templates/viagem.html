@@ -30,7 +30,7 @@
 
 {# ---- parâmetros ---- #}
 <details class="card" {% if not plan.ok %}open{% endif %}>
-  <summary style="cursor:pointer"><b>{{ veh.name }}</b> <span class="muted">· {{ veh.battery_kwh|num }} kWh · {{ pp.kwh_100km or veh.kwh_100km|num }} kWh/100 km · saindo com {{ pp.soc_start_pct }}% · reserva {{ pp.soc_min_pct if pp.soc_min_pct is not none else veh.soc_min_pct }}% · teto {{ pp.soc_max_pct if pp.soc_max_pct is not none else veh.soc_max_pct }}% · hora {{ pp.hour_value|brl }} · <u>ajustar</u></span></summary>
+  <summary style="cursor:pointer"><b>{{ veh.name }}</b> <span class="muted">· autonomia <b>{{ plan.full_range_km|round(0)|int }} km</b> (útil {{ plan.useful_range_km|round(0)|int }} km entre {{ pp.soc_min_pct if pp.soc_min_pct is not none else veh.soc_min_pct }} e {{ pp.soc_max_pct if pp.soc_max_pct is not none else veh.soc_max_pct }} %) · saindo com {{ pp.soc_start_pct }}% · hora {{ pp.hour_value|brl }} · <u>ajustar</u></span></summary>
   <form class="cred" method="get" action="/viagens/{{ t.id }}" style="margin-top:8px">
     <div class="grid3">
       <div><label>veículo</label><select name="v">{% for x in vehicles %}<option value="{{ x.id }}" {% if x.id == veh.id %}selected{% endif %}>{{ x.name }}</option>{% endfor %}</select></div>
@@ -38,7 +38,9 @@
       <div><label>SoC na saída %</label><input type="number" name="soc" min="0" max="100" step="1" value="{{ pp.soc_start_pct }}"></div>
       <div><label>reserva mínima %</label><input type="number" name="soc_min" min="0" max="100" step="1" value="{{ pp.soc_min_pct if pp.soc_min_pct is not none else veh.soc_min_pct }}"></div>
       <div><label>teto de carga %</label><input type="number" name="soc_max" min="0" max="100" step="1" value="{{ pp.soc_max_pct if pp.soc_max_pct is not none else veh.soc_max_pct }}"></div>
-      <div><label>consumo kWh/100 km</label><input type="number" name="kwh100" min="5" max="60" step="0.5" value="{{ (pp.kwh_100km or veh.kwh_100km)|num }}"></div>
+      <input type="hidden" data-sync="batt" value="{{ veh.battery_kwh }}">
+      <div><label>autonomia real (km, bateria cheia)</label><input type="number" name="range" min="50" step="5" value="{{ plan.full_range_km|round(0)|int }}" data-sync="range"></div>
+      <div><label>= consumo kWh/100 km</label><input type="number" name="kwh100" min="5" max="60" step="0.1" value="{{ (pp.kwh_100km or veh.kwh_100km)|round(1)|num }}" data-sync="cons"></div>
       <div><label>valor da sua hora (R$)</label><input type="number" name="hv" min="0" step="5" value="{{ pp.hour_value|num }}"></div>
       <div><label>desvio máx. da rota (km)</label><input type="number" name="detour" min="0.5" max="50" step="0.5" value="{{ (pp.detour_km or settings.trip_detour_km)|num }}"></div>
       <div><label>preço presumido sem preço (R$/kWh)</label><input type="number" name="assumed" min="0" step="0.05" value="{{ pp.assumed_price_kwh|num if pp.assumed_price_kwh else '' }}" placeholder="{{ plan.assumed_price_kwh|num }} (90º percentil)"></div>
@@ -91,7 +93,8 @@
 {% else %}
 <div class="card">
   <div class="name fee-bad">Não há plano viável</div>
-  <div class="muted">{{ plan.reason }}. Autonomia útil do veículo com estes parâmetros: <b>{{ veh.range_km|round(0)|int }} km</b> (teto − reserva).</div>
+  <div class="muted">{{ plan.reason }}. Autonomia com estes parâmetros: <b>{{ plan.full_range_km|round(0)|int }} km</b> cheia,
+    <b>{{ plan.useful_range_km|round(0)|int }} km</b> úteis entre o teto e a reserva.</div>
   {% if plan.gaps %}<div style="margin-top:6px"><b>Trechos sem estação alcançável:</b>
     {% for g in plan.gaps %}<div>km {{ g.from_km|round(0)|int }} ({{ g.from }}) → km {{ g.to_km|round(0)|int }} ({{ g.to }}): <span class="fee-bad">{{ g.km|round(0)|int }} km</span></div>{% endfor %}</div>{% endif %}
   <div class="muted" style="margin-top:6px">O que ajuda: coletar o corredor inteiro (acima), aumentar o desvio máximo, o teto de carga ou incluir estações sem preço/ocupadas.</div>
@@ -115,6 +118,7 @@
   {% endfor %}
 </table></div>
 <p class="muted"><a href="/api/trip/{{ t.id }}/plan">JSON</a> · <a href="/api/trip/{{ t.id }}/route">rota (GeoJSON)</a> · modelo: potência plena até 80 % e 40 % dela acima; 5 % de perda na recarga; desvio = 2 × distância em linha reta × 1,3 a 40 km/h; {{ pp.stop_overhead_min|num }} min por parada.</p>
+<script src="/static/rangesync.js"></script>
 <script>
 (function () {
   const c = document.getElementById('cov');

@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 {% block title %}evprices — veículos{% endblock %}
 {% block content %}
-<p class="muted">O plano de viagem usa a bateria, o consumo em estrada, a potência DC que o carro aceita e os plugues compatíveis.
-  A autonomia útil considerada é a fatia entre a <b>reserva</b> (nunca chegar abaixo) e o <b>teto</b> de carga em viagem
-  (acima de 80 % a potência cai muito).</p>
+<p class="muted">O plano de viagem usa a bateria, a <b>autonomia real em estrada</b> (com bateria cheia, a 100–110 km/h — não a do
+  folheto), a potência DC que o carro aceita e os plugues compatíveis. Autonomia e consumo são a mesma informação: informe
+  um e o outro se ajusta. A autonomia útil considerada é a fatia entre a <b>reserva</b> (nunca chegar abaixo) e o
+  <b>teto</b> de carga em viagem (acima de 80 % a potência cai muito).</p>
 {% if ok %}<div class="card ok-msg">✔ {{ ok }}</div>{% endif %}
 {% if err %}<div class="card fee-bad">⚠️ {{ err }}</div>{% endif %}
 
@@ -12,8 +13,9 @@
   {% if v %}<input type="hidden" name="id" value="{{ v.id }}">{% endif %}
   <div class="grid3">
     <div><label>nome</label><input type="text" name="name" value="{{ v.name if v else '' }}" placeholder="BYD Dolphin GS" required></div>
-    <div><label>bateria útil (kWh)</label><input type="number" name="battery_kwh" step="0.1" min="1" value="{{ v.battery_kwh|num if v else '' }}" required></div>
-    <div><label>consumo em estrada (kWh/100 km)</label><input type="number" name="kwh_100km" step="0.5" min="5" value="{{ v.kwh_100km|num if v else '16' }}" required></div>
+    <div><label>bateria útil (kWh)</label><input type="number" name="battery_kwh" step="0.1" min="1" value="{{ v.battery_kwh|num if v else '' }}" required data-sync="batt"></div>
+    <div><label>autonomia real em estrada (km, bateria cheia)</label><input type="number" name="range_km" step="5" min="50" value="{{ v.full_range_km|round(0)|int if v else '' }}" required data-sync="range"></div>
+    <div><label>= consumo (kWh/100 km)</label><input type="number" name="kwh_100km" step="0.1" min="5" value="{{ v.kwh_100km|round(1)|num if v else '' }}" data-sync="cons"></div>
     <div><label>potência DC máx. (kW)</label><input type="number" name="max_dc_kw" step="1" min="10" value="{{ v.max_dc_kw|num if v else '' }}" required></div>
     <div><label>reserva mínima (%)</label><input type="number" name="soc_min_pct" step="1" min="0" max="99" value="{{ v.soc_min_pct if v else 10 }}"></div>
     <div><label>teto de carga em viagem (%)</label><input type="number" name="soc_max_pct" step="1" min="1" max="100" value="{{ v.soc_max_pct if v else 90 }}"></div>
@@ -32,8 +34,8 @@
 {% for v in vehicles %}
 <details class="card" {% if loop.first %}open{% endif %}>
   <summary style="cursor:pointer"><b>{{ v.name }}</b>{% if v.is_default %} <span class="chip">padrão</span>{% endif %}
-    <span class="muted">· {{ v.battery_kwh|num }} kWh · {{ v.kwh_100km|num }} kWh/100 km · DC {{ v.max_dc_kw|num }} kW · {{ v.plug_types|join(", ") }} ·
-      autonomia útil {{ v.range_km|round(0)|int }} km ({{ v.soc_min_pct }}–{{ v.soc_max_pct }} %), cheia {{ v.full_range_km|round(0)|int }} km</span></summary>
+    <span class="muted">· {{ v.battery_kwh|num }} kWh · autonomia <b>{{ v.full_range_km|round(0)|int }} km</b> ({{ v.kwh_100km|round(1)|num }} kWh/100 km) ·
+      útil em viagem {{ v.range_km|round(0)|int }} km ({{ v.soc_min_pct }}–{{ v.soc_max_pct }} %) · DC {{ v.max_dc_kw|num }} kW · {{ v.plug_types|join(", ") }}</span></summary>
   <div style="margin-top:8px">{{ vform(v) }}</div>
 </details>
 {% endfor %}
@@ -43,4 +45,5 @@
   <div style="margin-top:8px">{{ vform(none) }}</div>
 </details>
 <p class="muted"><a href="/viagens">← viagens</a></p>
+<script src="/static/rangesync.js"></script>
 {% endblock %}

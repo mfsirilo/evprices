@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import mimetypes
+import re
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -586,8 +587,13 @@ def api_ufs():
 
 @app.get("/api/municipios")
 def api_municipios(uf: str | None = None, q: str | None = None, limit: int = Query(1000, le=6000)):
-    """Lista para o seletor. `uf` = sigla; `q` = começo do nome (sem acento/maiúscula)."""
+    """Lista para o seletor. `uf` = sigla; `q` = começo do nome (sem acento/maiúscula), aceitando também
+    "rio verde/go", "rio verde, go" ou "rio verde go" — a UF no fim vira filtro. Monitorados vêm primeiro."""
     where, params = [], []
+    if q:
+        m = re.fullmatch(r"\s*(.+?)\s*[/,\-]?\s+([a-zA-Z]{2})\s*", q) or re.fullmatch(r"\s*(.+?)\s*/\s*([a-zA-Z]{2})\s*", q)
+        if m and not uf:
+            q, uf = m.group(1), m.group(2)
     if uf:
         where.append("u.sigla = %s")
         params.append(uf.upper())
@@ -598,7 +604,7 @@ def api_municipios(uf: str | None = None, q: str | None = None, limit: int = Que
            "FROM municipio m JOIN uf u ON u.id = m.uf_id ")
     if where:
         sql += "WHERE " + " AND ".join(where) + " "
-    sql += "ORDER BY m.nome LIMIT %s"
+    sql += "ORDER BY m.monitored DESC, m.nome, u.sigla LIMIT %s"
     with db.connect() as conn:
         return conn.execute(sql, (*params, limit)).fetchall()
 
@@ -715,7 +721,10 @@ def api_summary(municipio: int, kwh: float | None = None, charge_min: float | No
 # ---------- viagens ----------
 def _trip_params(request: Request, v: int | None, soc: int | None, soc_min: int | None, soc_max: int | None,
                  kwh100: float | None, hv: float | None, depart: str | None, detour: float | None, unpriced: int | None,
-                 busy: int | None, assumed: float | None) -> trips_.PlanParams:
+                 busy: int | None, assumed: float | None, range_km: float | None = None,
+                 veh: trips_.Vehicle | None = None) -> trips_.PlanParams:
+    if range_km and veh:   # autonomia informada na viagem manda sobre o consumo
+        kwh100 = trips_.consumption(veh.battery_kwh, range_km)
     dep = None
     if depart:
         try:
@@ -779,12 +788,14 @@ def viagem_page(request: Request, trip_id: int, v: int | None = Query(None), soc
                 soc_min: int | None = Query(None, ge=0, le=100), soc_max: int | None = Query(None, ge=0, le=100),
                 kwh100: float | None = Query(None, ge=0), hv: float | None = Query(None, ge=0), depart: str | None = Query(None),
                 detour: float | None = Query(None, ge=0, le=50), unpriced: int | None = Query(None), busy: int | None = Query(None),
-                assumed: float | None = Query(None, ge=0), ok: str | None = Query(None)):
-    pp = _trip_params(request, v, soc, soc_min, soc_max, kwh100, hv, depart, detour, unpriced, busy, assumed)
+                assumed: float | None = Query(None, ge=0), range_km: float | None = Query(None, ge=1, alias="range"),
+                ok: str | None = Query(None)):
     with db.connect() as conn:
         t = trips_.trip(conn, trip_id)
         if not t:
             raise HTTPException(404)
+        pp = _trip_params(request, v, soc, soc_min, soc_max, kwh100, hv, depart, detour, unpriced, busy, assumed, range_km,
+                          trips_.vehicle(conn, v))
         data = _trip_page_data(conn, t, pp, v)
     data["ok"] = ok
     data["depart_value"] = (pp.depart or datetime.now(TZ)).strftime("%Y-%m-%dT%H:%M")
@@ -820,17 +831,21 @@ def viagem_excluir(trip_id: int):
 @app.get("/api/trip/{trip_id}/plan")
 def api_trip_plan(trip_id: int, v: int | None = None, soc: int | None = None, soc_min: int | None = None,
                   soc_max: int | None = None, kwh100: float | None = None, hv: float | None = None, depart: str | None = None,
-                  detour: float | None = None, unpriced: int | None = None, busy: int | None = None, assumed: float | None = None):
-    pp = _trip_params(None, v, soc, soc_min, soc_max, kwh100, hv, depart, detour, unpriced, busy, assumed)   # type: ignore[arg-type]
+                  detour: float | None = None, unpriced: int | None = None, busy: int | None = None, assumed: float | None = None,
+                  range_km: float | None = Query(None, alias="range")):
     with db.connect() as conn:
         t = trips_.trip(conn, trip_id)
         if not t:
             raise HTTPException(404)
+        pp = _trip_params(None, v, soc, soc_min, soc_max, kwh100, hv, depart, detour, unpriced, busy, assumed,   # type: ignore[arg-type]
+                          range_km, trips_.vehicle(conn, v))
         d = _trip_page_data(conn, t, pp, v)
     p = d["plan"]
     return {
         "trip": {k: t[k] for k in ("id", "name", "distance_m", "duration_s", "origin_lat", "origin_lon", "dest_lat", "dest_lon")},
-        "vehicle": d["veh"].__dict__, "coverage": d["cov"], "ok": p.ok, "reason": p.reason, "gaps": p.gaps,
+        "vehicle": {**d["veh"].__dict__, "full_range_km": round(d["veh"].full_range_km)},
+        "range_km": round(p.full_range_km), "useful_range_km": round(p.useful_range_km),
+        "coverage": d["cov"], "ok": p.ok, "reason": p.reason, "gaps": p.gaps,
         "money": round(p.money, 2), "kwh_billed": round(p.kwh_billed, 1), "charge_min": round(p.charge_min),
         "wait_min": round(p.wait_min), "detour_min": round(p.detour_min), "drive_min": round(p.drive_min),
         "arrive_soc": p.arrive_soc, "arrive_at": p.arrive_at, "assumed_price_kwh": p.assumed_price_kwh,
@@ -876,15 +891,17 @@ def veiculos_page(request: Request, ok: str | None = Query(None), err: str | Non
 
 
 @app.post("/veiculos")
-def veiculos_save(id: int | None = Form(None), name: str = Form(""), battery_kwh: float = Form(0), kwh_100km: float = Form(0),
-                  max_dc_kw: float = Form(0), plug_types: list[str] = Form([]), soc_min_pct: int = Form(10),
+def veiculos_save(id: int | None = Form(None), name: str = Form(""), battery_kwh: float = Form(0), range_km: float = Form(0),
+                  kwh_100km: str = Form(""), max_dc_kw: float = Form(0), plug_types: list[str] = Form([]), soc_min_pct: int = Form(10),
                   soc_max_pct: int = Form(90), is_default: int = Form(0), action: str = Form("save")):
     try:
         with db.connect() as conn:
             if action == "delete" and id is not None:
                 trips_.delete_vehicle(conn, id)
                 return RedirectResponse("/veiculos?ok=veículo removido", status_code=303)
-            trips_.save_vehicle(conn, id, name=name, battery_kwh=battery_kwh, kwh_100km=kwh_100km, max_dc_kw=max_dc_kw,
+            cons = float(kwh_100km.replace(",", ".")) if kwh_100km.strip() else None
+            trips_.save_vehicle(conn, id, name=name, battery_kwh=battery_kwh, range_km=range_km, kwh_100km=cons,
+                                max_dc_kw=max_dc_kw,
                                 plug_types=plug_types, soc_min_pct=soc_min_pct, soc_max_pct=soc_max_pct,
                                 is_default=bool(is_default))
     except ValueError as e:

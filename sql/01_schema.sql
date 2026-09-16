@@ -360,9 +360,11 @@ CREATE TABLE IF NOT EXISTS vehicle (
     is_default    boolean NOT NULL DEFAULT false,
     updated_at    timestamptz NOT NULL DEFAULT now()
 );
-INSERT INTO vehicle (name, battery_kwh, kwh_100km, max_dc_kw, plug_types, is_default)
-SELECT 'BYD Dolphin GS', 44.9, 16.0, 60, '{"CCS 2"}', true
+ALTER TABLE vehicle ADD COLUMN IF NOT EXISTS range_km numeric(6, 0);   -- autonomia real em estrada com bateria cheia
+INSERT INTO vehicle (name, battery_kwh, kwh_100km, range_km, max_dc_kw, plug_types, is_default)
+SELECT 'BYD Dolphin GS', 44.9, 16.0, 280, 60, '{"CCS 2"}', true
  WHERE NOT EXISTS (SELECT 1 FROM vehicle);
+UPDATE vehicle SET range_km = round(battery_kwh / kwh_100km * 100) WHERE range_km IS NULL;
 
 CREATE TABLE IF NOT EXISTS trip (
     id                 serial PRIMARY KEY,
