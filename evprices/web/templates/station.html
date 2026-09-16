@@ -18,6 +18,8 @@
   <div class="muted">{{ st.business_hours or "" }}{% if st.free_parking is not none %} · estacionamento {{ "grátis" if st.free_parking else "pago" }}{% endif %}
     · estado <span class="state-{{ st.state }}">{{ st.state or "?" }}</span></div>
   <div class="muted">{% if mun %}<a href="/?m={{ mun.id }}">{{ mun.nome }}/{{ mun.uf }}</a> · {% endif %}ID {{ st.external_id }} · visto {{ st.last_seen_at|dt }}</div>
+  {% set op = (ops or {}).get(st.source) %}
+  {% if op %}{% include "_operator_link.html" %}{% endif %}
 </div>
 
 <h2>Evolução do R$/kWh</h2>

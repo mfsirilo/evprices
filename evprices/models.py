@@ -38,6 +38,7 @@ class ConnectorObs:
     current_type: Optional[str]
     power_kw: Optional[Decimal]
     state: Optional[str]
+    tariff: Optional[TariffObs] = None   # tarifa própria da tomada; None => vale a da estação
 
 
 @dataclass
@@ -53,5 +54,5 @@ class StationObs:
     is_private: bool
     state: Optional[str]
     connectors: list[ConnectorObs]
-    tariff: Optional[TariffObs]   # na Tupi a tarifa é da estação; aplicada a cada conector
+    tariff: Optional[TariffObs]   # tarifa da estação, aplicada a cada conector sem tarifa própria
     raw: dict[str, Any]

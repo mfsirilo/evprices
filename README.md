@@ -13,8 +13,10 @@ Sem mapa, sem redistribuição.
   - **Tupi Mob** (`api.tupinambaenergia.com.br`): BYD Recharge, **Shell Recharge** (app "Shell Recharge LATAM"
     é a plataforma Tupi — `iconPack: shell`, preço completo), WEG/wemob, EON, Energik e dezenas de outras
     redes. Busca por raio que envolve o município + corte pelo polígono + 1 requisição por estação.
-  - **Turbo Station** e **On-Charge** (GSOL, BUENO, Green-V, Ecofortte…): lista do país inteiro, cortada pelo
-    polígono. On-Charge não publica preço — entra como "preço desconhecido".
+  - **Turbo Station**: lista do país inteiro, cortada pelo polígono.
+  - **On-Charge** (GSOL, BUENO, Green-V, Ecofortte, JC Recarga…): **API do app** (`cs.oncharge.app`, exige conta) —
+    preço fixo por estação ou dinâmico por tomada (regras por dia/horário). Ver [On-Charge](#on-charge-api-do-app-com-login).
+    Sem conta configurada, cai no GeoJSON público do mapa, sem preço.
   - **Clube Charger** (`/api/map/stations` do web app): ~430 pontos no país com R$/kWh, ativação e tarifa por
     horário; `kind=community` = ponto cadastrado pela comunidade (preço declarado pelo dono, anotado na tarifa).
   - **Bow Energy** (API do web app `bow.app.br`): rede pequena no ES, com `tariff_per_kwh_brl`.
@@ -36,7 +38,7 @@ Sem mapa, sem redistribuição.
 | plataforma | apps (Play Store) | cobertura |
 |---|---|---|
 | Tupi / Tupinambá (`com.tupi.*`, `tupimob`) | BYD Recharge, Shell Recharge, WEG/wemob, EON, Ative Charge, Cia Charge, Nordeste Eletropostos, EV Eletroposto, Voltz, Plugo, BR Super Carga | ✅ coletor `tupi` |
-| On-Charge | GSOL, BUENO, Green-V, Ecofortte | ✅ `oncharge` (sem preço) |
+| On-Charge | GSOL, BUENO, Green-V, Ecofortte, JC Recarga | ✅ `oncharge` (API do app, com login: preço fixo e dinâmico) |
 | Turbo Station | Turbo Station | ✅ `turbostation` |
 | Clube Charger | Clube Charger (+ Eletrovias, Watts Mobi, Zap Charge…) | ✅ `clubecharger` |
 | Bow Energy | Bow | ✅ `bow` |
@@ -46,8 +48,46 @@ Sem mapa, sem redistribuição.
 | Spott | Universal Eletroposto | ❌ só app |
 | próprios | Voltta, VeVolt, Celesc | ❌ sites institucionais sem preço |
 
-Regra do projeto: só fontes públicas, sem conta e sem interceptar app. Se alguma dessas plataformas publicar um
-mapa web, o coletor é um arquivo em `evprices/collectors/` + uma linha em `COLLECTORS` (`run.py`) e em `source` (schema).
+Regra do projeto: fontes públicas sem conta sempre que existirem. Plataforma que só tem app entra pela API do
+app **com a sua própria conta**, num sincronizador de intervalo fixo (hoje: On-Charge). Se alguma das outras publicar
+um mapa web, o coletor é um arquivo em `evprices/collectors/` + uma linha em `COLLECTORS` (`run.py`) e em `source` (schema).
+
+## On-Charge (API do app, com login)
+
+API REST própria do app `com.app.oncharge` (`https://cs.oncharge.app/api/v1`), mapeada por engenharia reversa.
+Headers obrigatórios em toda chamada: `Api-Key` (chave fixa do tenant, embutida no app — não é secreta),
+`Platform: MOBILE` (sem ele a API responde 500) e `Authorization: Bearer <token>` (exceto no login).
+
+| chamada | o quê |
+|---|---|
+| `POST /login/` `{"email","password","recaptchaResponse":""}` | `token` + `expiresAt`; `twoFactorRequired=true` aborta |
+| `GET /chargepoints` | todas as estações (≈500) com conectores e **preço fixo**: `moneyPerKilowattIncome` (R$/kWh), `moneyPerTransactionIncome` (ativação), `paymentChargeTypeIncome` (KWH/DURATION), `hasPayment`; por tomada `idleFeeDefaultAmount` e `dynamicPricingUuid` |
+| `GET /dynamic-pricing/connector-dynamic-pricing?chargeBoxId=&connectorPk=` | regras de **preço dinâmico** da tomada: `kwhPrice`, `idleTimePrice` (R$/min, carência `customIdleTime`), `servicePrice` (ativação), `startTimeGMT`/`endTimeGMT` (janela, em GMT), `dayOfWeek` |
+
+**`connectorPk` é obrigatório na prática**: só com `chargeBoxId` o servidor devolve um plano alheio ("Bela Vista",
+tenant 60) para qualquer estação. Com o `connectorPk` (de `connectors[].connectorPk` da lista) vem o preço real.
+Só ~40 % das estações têm preço dinâmico; as outras usam o fixo da lista. Observado: o endpoint devolve a regra do
+**dia atual** — regra sem horário vale o dia todo; com horário vira `tariff_window`. O `chargeBoxPk` é o mesmo
+`id` do GeoJSON público, então a estação continua a mesma no banco (mesmo `external_id`).
+
+**Regras de coleta** (`evprices/oncharge_sync.py`), para não virar spam nem bloqueio da conta:
+
+1. Só o sincronizador chama a API, dentro do `loop` do collector, a cada `ONCHARGE_INTERVAL_MIN` (mínimo 10 —
+   valor menor é elevado para 10).
+2. Nunca por ação do usuário: abrir tela, "coletar agora", pull-to-refresh e o coletor `oncharge` leem a tabela
+   `oncharge_chargepoint` (cache com timestamp). Sem coleta ainda, a UI mostra "aguardando a primeira coleta".
+3. Um ciclo faz tudo: login **só** se o token guardado em `kv` faltar/expirar ou a API devolver 401/403 (uma vez);
+   1 `GET /chargepoints`; 1 `GET` de preço dinâmico **por plano** (`dynamicPricingUuid`) das tomadas em municípios
+   monitorados (tomadas que compartilham o plano devolvem a mesma regra), com `REQUEST_DELAY_S` entre chamadas.
+   Depois grava o cache e leva para `station/connector/tariff` (histórico) de cada município monitorado.
+4. Ciclo com erro não encurta o intervalo: registra o erro (`/operadores`, notificação) e espera o próximo horário.
+
+**Credenciais**: e-mail/senha da **sua** conta do app, uma vez, valendo para todas as estações do operador.
+Página `/operadores` (grava em `operator_credential`; tem prioridade) ou `ONCHARGE_EMAIL`/`ONCHARGE_PASSWORD`
+no `.env` (fora do git). A `Api-Key` tem default no código e pode ser sobrescrita (`ONCHARGE_API_KEY` ou na página).
+O card da estação e a página dela têm o atalho 🔑 para essa tela (sem login / aguardando / erro / sincronizado HH:MM).
+A mesma página lista as plataformas que ainda **faltam a chave do app** (Voltbras, EZVolt/MyCharge, movE).
+`python -m evprices.run sync-oncharge` força um ciclo à mão (depuração).
 
 ## Referência "em casa" (tarifa da distribuidora)
 
@@ -97,6 +137,7 @@ Comandos úteis:
 docker compose exec collector python -m evprices.run collect 5218805   # coleta Rio Verde/GO agora (código IBGE)
 docker compose exec collector python -m evprices.run load-municipios   # recarrega lista/malhas do IBGE
 docker compose exec collector python -m evprices.run load-home         # recarrega tarifas/bandeiras/distribuidoras ANEEL
+docker compose exec collector python -m evprices.run sync-oncharge     # força um ciclo da API do app On-Charge
 docker compose exec db psql -U evprices -d evprices                    # SQL direto
 ```
 
@@ -108,6 +149,8 @@ docker compose exec db psql -U evprices -d evprices                    # SQL dir
 | `/evolucao?m=ID&from=now-7d&to=now` | gráfico: um painel por estação com a evolução do R$/kWh em degraus; período estilo Zabbix (`now-30d`, `now/M`, `now-1M/M`, `2026-09-01 14:00`; unidades m h d w M y), com períodos rápidos e última escolha lembrada |
 | `/favoritas` | estações marcadas com ★ (de todos os municípios) pelo custo do cenário; `/?fav=1` filtra o ranking |
 | `/municipios` | municípios monitorados, estado da coleta, parar/retomar |
+| `/operadores` · `/operadores/{slug}` | login por operador (On-Charge) + estado do sincronizador; `POST` grava/remove |
+| `/api/operators` | JSON do estado dos operadores (sem segredos) |
 | `/station/{id}` | tomadas da estação + histórico de tarifas; endereço abre o app de mapas (Google/Apple) e botão de rotas |
 | `/runs` | log das coletas (por município e fonte) |
 | `/api/ufs`, `/api/municipios?uf=GO&q=rio` | listas para o seletor |

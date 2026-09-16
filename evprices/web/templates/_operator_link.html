@@ -1,0 +1,5 @@
+{# Atalho do operador com login. Espera `op` (de operators.states). Nunca dispara chamada à API. #}
+{% if not op.configured %}<a class="keylink" href="/operadores/{{ op.slug }}">🔑 informar login {{ op.name }} para ver o preço</a>
+{% elif op.waiting_first %}<a class="keylink ok" href="/operadores/{{ op.slug }}">⏳ {{ op.name }}: aguardando a primeira coleta</a>
+{% elif op.last_error %}<a class="keylink" href="/operadores/{{ op.slug }}">⚠️ {{ op.name }}: última sincronização falhou</a>
+{% else %}<a class="keylink ok" href="/operadores/{{ op.slug }}">🔑 {{ op.name }} · sincronizado {{ op.last_success_at|dt("%H:%M") }}</a>{% endif %}

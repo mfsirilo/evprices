@@ -31,4 +31,6 @@
   </div>
   {% endfor %}
   <div class="muted" style="margin-top:6px">desde {{ s.options[0].valid_from|date }} · visto {{ s.last_seen_at|date }}</div>
+  {% set op = (ops or {}).get(s.source) %}
+  {% if op %}{% include "_operator_link.html" %}{% endif %}
 </div>

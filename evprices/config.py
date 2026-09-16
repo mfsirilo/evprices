@@ -50,6 +50,16 @@ class Settings:
     notify_on_new: bool = field(default_factory=lambda: _bool("NOTIFY_ON_NEW", False))
     notify_on_error: bool = field(default_factory=lambda: _bool("NOTIFY_ON_ERROR", True))
 
+    # On-Charge (API do app com.app.oncharge). A Api-Key é a do tenant, embutida no app oficial (não é secreta);
+    # e-mail/senha da conta ficam no .env (fora do git) ou na página /operadores (tabela operator_credential).
+    oncharge_base_url: str = field(default_factory=lambda: _env("ONCHARGE_BASE_URL", "https://cs.oncharge.app/api/v1"))
+    oncharge_api_key: str = field(default_factory=lambda: _env("ONCHARGE_API_KEY", "d66933f5-1eff-4707-80c5-32a13cf913b0"))
+    oncharge_email: str = field(default_factory=lambda: _env("ONCHARGE_EMAIL"))
+    oncharge_password: str = field(default_factory=lambda: _env("ONCHARGE_PASSWORD"))
+    # Intervalo fixo do sincronizador; nunca abaixo de 10 min (regra anti-bloqueio: 1 login + 1 lista + preços/ciclo)
+    oncharge_interval_min: float = field(
+        default_factory=lambda: max(10.0, float(_env("ONCHARGE_INTERVAL_MIN", "10") or 10)))
+
     default_kwh: float = field(default_factory=lambda: float(_env("DEFAULT_KWH", "30")))
     default_charge_min: float = field(default_factory=lambda: float(_env("DEFAULT_CHARGE_MIN", "40")))
     default_idle_min: float = field(default_factory=lambda: float(_env("DEFAULT_IDLE_MIN", "10")))

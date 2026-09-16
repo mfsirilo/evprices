@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}evprices — operadores{% endblock %}
+{% block content %}
+<p class="muted">Plataformas cujo app exige conta. Informe o login <b>uma vez</b>: ele vale para todas as estações do operador.
+  A consulta roda sozinha no collector em horário fixo (nunca ao abrir uma tela); as páginas mostram a última coleta gravada.</p>
+{% if ok %}<div class="card ok-msg">✔ {{ ok }}. O próximo ciclo do sincronizador usa o novo login.</div>{% endif %}
+
+{% for o in ops.values() %}
+<div class="card" id="{{ o.slug }}" {% if slug == o.slug %}style="border-color:var(--accent)"{% endif %}>
+  <div class="row"><div class="grow"><div class="name">{{ o.name }}</div><div class="muted">{{ o.apps }}</div></div>
+    <span class="chip">{% if o.configured %}configurado{% else %}sem login{% endif %}</span></div>
+
+  <div class="muted" style="margin:8px 0">
+    {% if not o.configured %}
+      Sem e-mail/senha: as estações entram pelo mapa público, <b>sem preço</b>.
+    {% elif o.waiting_first %}
+      <span class="spin"></span> Aguardando a primeira coleta (a cada {{ o.interval_min|num }} min). Login de <b>{{ o.email }}</b>
+      ({{ "página" if o.origin == "db" else ".env" }}).
+    {% else %}
+      Login de <b>{{ o.email }}</b> ({{ "página" if o.origin == "db" else ".env" }}) · a cada {{ o.interval_min|num }} min ·
+      última coleta <b>{{ o.last_success_at|dt }}</b> · {{ o.cached_stations }} estações no cache
+      {% if o.last_attempt_at and o.last_attempt_at != o.last_success_at %} · última tentativa {{ o.last_attempt_at|dt }}{% endif %}
+      · token {{ "guardado" if o.token else "ausente (fará login no próximo ciclo)" }}
+    {% endif %}
+    {% if o.last_error %}<div class="fee-bad">⚠️ {{ o.last_error }}</div>{% endif %}
+  </div>
+
+  <form class="cred" method="post" action="/operadores/{{ o.slug }}" autocomplete="off">
+    <div><label>e-mail da conta {{ o.name }}</label><input type="email" name="email" value="{{ o.email }}" required autocomplete="username"></div>
+    <div><label>senha</label><input type="password" name="password" required autocomplete="current-password" placeholder="{{ 'gravada — digite para trocar' if o.configured else '' }}"></div>
+    <details><summary class="muted">Api-Key do tenant (avançado)</summary>
+      <div class="muted">{{ o.api_key_note }} Deixe vazio para usar a padrão{% if o.api_key_overridden %} (hoje: sobrescrita por aqui){% endif %}.</div>
+      <input type="text" name="api_key" placeholder="padrão do .env / código" autocomplete="off">
+    </details>
+    <div class="actions">
+      <button class="btn" type="submit" name="action" value="save">Salvar</button>
+      {% if o.origin == "db" %}<button class="btn ghost" type="submit" name="action" value="delete" formnovalidate onclick="return confirm('Remover o login gravado?')">Remover</button>{% endif %}
+      <span class="muted">Variáveis alternativas no .env: {{ o.env_email }} / {{ o.env_password }}</span>
+    </div>
+  </form>
+</div>
+{% endfor %}
+
+<h2>Ainda sem cliente (falta a chave do app)</h2>
+<p class="muted">Plataformas que também exigem conta ou API key embutida no app. Para integrar, é preciso descobrir a chave
+  (engenharia reversa do APK/tráfego) — enquanto isso as estações delas não entram.</p>
+<div class="card tbl"><table>
+  <tr><th>Plataforma</th><th>Apps</th><th>O que falta</th></tr>
+  {% for p in pending %}<tr><td><b>{{ p.name }}</b></td><td>{{ p.apps }}</td><td class="fee-bad">{{ p.api_key_note }}</td></tr>{% endfor %}
+</table></div>
+<p class="muted"><a href="/api/operators">JSON</a> · <a href="/">← voltar</a></p>
+{% endblock %}

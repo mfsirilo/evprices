@@ -97,12 +97,22 @@
           border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   #locate-result { margin-top: 8px; }
+  /* atalho para o login do operador (card e página da estação) */
+  a.keylink { position: relative; z-index: 2; display: inline-block; margin-top: 6px; padding: 4px 10px; border-radius: 999px;
+              background: var(--chip); color: var(--warn); font-size: 12px; font-weight: 600; }
+  a.keylink.ok { color: var(--muted); font-weight: 400; }
+  form.cred { display: grid; gap: 8px; }
+  form.cred label { font-size: 12px; color: var(--muted); display: block; }
+  form.cred input { width: 100%; font-size: 16px; padding: 9px; border: 1px solid var(--line); border-radius: 10px;
+                    background: var(--card); color: var(--fg); }
+  form.cred .actions { display: flex; gap: 8px; align-items: center; }
+  .ok-msg { color: var(--good); font-size: 14px; }
 </style>
 </head>
 <body>
 <header class="top">
   <h1><a href="/">⚡ evprices</a></h1>
-  <nav><a href="/">Preços</a><a href="/evolucao">Evolução</a><a href="/favoritas">★</a><a href="/municipios">Municípios</a><a href="/runs">Coletas</a></nav>
+  <nav><a href="/">Preços</a><a href="/evolucao">Evolução</a><a href="/favoritas">★</a><a href="/municipios">Municípios</a><a href="/runs">Coletas</a><a href="/operadores" title="login dos operadores">🔑</a></nav>
 </header>
 <main>{% block content %}{% endblock %}</main>
 <script>

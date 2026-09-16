@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, Form, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .. import db, home_tariff, timerange
+from .. import db, home_tariff, operators, timerange
 from ..config import settings
 from ..municipios import slug as busca_slug
 
@@ -192,7 +192,7 @@ def _grouped_prices(sc: dict[str, float], municipio_id: int | None, favorites_on
         st = stations.setdefault(
             r["station_id"],
             {
-                "station_id": r["station_id"], "station": r["station"], "brand": r["brand"],
+                "station_id": r["station_id"], "station": r["station"], "brand": r["brand"], "source": r["source"],
                 "address": r["address"], "business_hours": r["business_hours"],
                 "municipio": r["municipio"], "uf": r["uf"], "municipio_id": r["municipio_id"],
                 "favorite": r["station_id"] in favs,
@@ -238,8 +238,11 @@ def index(request: Request, m: int | None = Query(None), kwh: float | None = Que
                 "SELECT * FROM observation_run WHERE municipio_id = %s ORDER BY started_at DESC LIMIT 1", (mun["id"],)
             ).fetchone()
             home = home_tariff.home_now(conn, mun.get("distribuidora"), mun.get("uf"))
+    with db.connect() as conn:
+        ops = operators.states(conn)
     resp = templates.TemplateResponse(
-        request, "index.html", {"stations": stations, "sc": sc, "last_run": last_run, "mun": mun, "ufs": ufs, "home": home, "fav": fav}
+        request, "index.html", {"stations": stations, "sc": sc, "last_run": last_run, "mun": mun, "ufs": ufs, "home": home,
+                                "fav": fav, "ops": ops}
     )
     if m is not None and mun:   # ?m= vira o padrão nas próximas visitas
         resp.set_cookie("municipio", str(mun["id"]), max_age=365 * 86400, samesite="lax")
@@ -369,7 +372,9 @@ def favoritas_page(request: Request, kwh: float | None = Query(None, ge=0), char
                    idle_min: float | None = Query(None, ge=0)):
     sc, from_form = _page_scenario(request, kwh, charge_min, idle_min)
     stations = _grouped_prices(sc, None, favorites_only=True)
-    resp = templates.TemplateResponse(request, "favoritas.html", {"stations": stations, "sc": sc})
+    with db.connect() as conn:
+        ops = operators.states(conn)
+    resp = templates.TemplateResponse(request, "favoritas.html", {"stations": stations, "sc": sc, "ops": ops})
     if from_form:
         _remember_scenario(resp, sc)
     return resp
@@ -411,9 +416,11 @@ def station_page(request: Request, station_id: int, from_: str | None = Query(No
                  to: str | None = Query(None)):
     rng, from_form = _page_range(request, from_, to)
     with db.connect() as conn:
-        st = conn.execute("SELECT * FROM station WHERE id = %s", (station_id,)).fetchone()
+        st = conn.execute("SELECT s.*, so.slug AS source FROM station s JOIN source so ON so.id = s.source_id "
+                          "WHERE s.id = %s", (station_id,)).fetchone()
         if not st:
             raise HTTPException(404)
+        ops = operators.states(conn)
         mun = _municipio(conn, st["municipio_id"]) if st["municipio_id"] else None
         st["favorite"] = station_id in _favorites(conn)
         evo = _evolution(conn, None, station_id)
@@ -435,10 +442,54 @@ def station_page(request: Request, station_id: int, from_: str | None = Query(No
                 (c["id"],),
             ).fetchall()
     resp = templates.TemplateResponse(
-        request, "station.html", {"st": st, "connectors": connectors, "mun": mun, "evo": evo, "home": home, "rng": rng}
+        request, "station.html", {"st": st, "connectors": connectors, "mun": mun, "evo": evo, "home": home, "rng": rng,
+                                  "ops": ops}
     )
     _remember_range(resp, rng, from_form)
     return resp
+
+
+# ---------- operadores com login (On-Charge…) ----------
+@app.get("/operadores", response_class=HTMLResponse)
+def operadores_page(request: Request, ok: str | None = Query(None)):
+    """Login por operador + estado do sincronizador. Só lê o banco: nunca dispara chamada à API daqui."""
+    with db.connect() as conn:
+        ops = operators.states(conn)
+    return templates.TemplateResponse(request, "operadores.html",
+                                      {"ops": ops, "pending": operators.PENDING, "ok": ok, "slug": None})
+
+
+@app.get("/operadores/{slug}", response_class=HTMLResponse)
+def operador_page(request: Request, slug: str, ok: str | None = Query(None)):
+    """Mesma página, rolada/focada num operador (atalho 🔑 do card da estação)."""
+    if slug not in operators.OPERATORS:
+        raise HTTPException(404)
+    with db.connect() as conn:
+        ops = operators.states(conn)
+    return templates.TemplateResponse(request, "operadores.html",
+                                      {"ops": ops, "pending": operators.PENDING, "ok": ok, "slug": slug})
+
+
+@app.post("/operadores/{slug}")
+def operador_save(slug: str, email: str = Form(""), password: str = Form(""), api_key: str = Form(""),
+                  action: str = Form("save")):
+    if slug not in operators.OPERATORS:
+        raise HTTPException(404)
+    with db.connect() as conn:
+        if action == "delete":
+            operators.delete_credentials(conn, slug)
+            return RedirectResponse(f"/operadores/{slug}?ok=removido", status_code=303)
+        if not email.strip() or not password:
+            raise HTTPException(422, "informe e-mail e senha")
+        operators.save_credentials(conn, slug, email, password, api_key)
+    return RedirectResponse(f"/operadores/{slug}?ok=salvo", status_code=303)
+
+
+@app.get("/api/operators")
+def api_operators():
+    """Estado dos operadores com login (credencial configurada?, última sincronização, erro). Sem segredos."""
+    with db.connect() as conn:
+        return operators.states(conn)
 
 
 @app.get("/runs", response_class=HTMLResponse)

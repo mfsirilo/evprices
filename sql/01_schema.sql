@@ -99,11 +99,39 @@ CREATE TABLE IF NOT EXISTS source (
 INSERT INTO source (slug, name, kind, base_url) VALUES
     ('tupi',   'Tupi Mob (Tupinambá) — mapa web público', 'public_web', 'https://api.tupinambaenergia.com.br'),
     ('turbostation', 'Turbo Station — site público',       'public_web', 'https://www.turbostation.com.br'),
-    ('oncharge', 'On-Charge — mapa web público (sem preço)', 'public_web', 'https://novo.oncharge.com.br'),
+    ('oncharge', 'On-Charge — API do app (login) + mapa web público', 'partner_api', 'https://cs.oncharge.app/api/v1'),
     ('clubecharger', 'Clube Charger — mapa do web app (JSON público)', 'public_web', 'https://clubecharger.com'),
     ('bow', 'Bow Energy — API do web app',                    'public_web', 'https://bow.app.br'),
     ('manual', 'Observação manual',                        'manual',     NULL)
 ON CONFLICT (slug) DO NOTHING;
+UPDATE source SET name = 'On-Charge — API do app (login) + mapa web público', kind = 'partner_api',
+       base_url = 'https://cs.oncharge.app/api/v1' WHERE slug = 'oncharge' AND kind <> 'partner_api';
+
+-- Login por operador (plataformas cuja API exige conta): uma conta serve para todas as estações da plataforma.
+-- Gravado pela página /operadores; sem linha aqui vale ONCHARGE_EMAIL/ONCHARGE_PASSWORD do .env.
+-- App pessoal: senha em texto no Postgres do container (mesma proteção do resto do banco).
+CREATE TABLE IF NOT EXISTS operator_credential (
+    source_slug text PRIMARY KEY REFERENCES source (slug),
+    email       text NOT NULL,
+    password    text NOT NULL,
+    api_key     text,                 -- NULL = usa a do .env / embutida no código
+    updated_at  timestamptz NOT NULL DEFAULT now()
+);
+
+-- Cache da API do app On-Charge (cs.oncharge.app). Preenchido SÓ pelo sincronizador de intervalo fixo
+-- (evprices/oncharge_sync.py); coletor e UI leem daqui, nunca da API.
+CREATE TABLE IF NOT EXISTS oncharge_chargepoint (
+    chargebox_pk       int PRIMARY KEY,     -- = id do GeoJSON público (mesma estação, mesmo external_id)
+    chargebox_id       text NOT NULL,       -- "ASDC1008022" — usado nas chamadas de preço
+    lat                double precision,
+    lon                double precision,
+    municipio_id       int REFERENCES municipio (id),   -- monitorado que contém o ponto (NULL = fora deles)
+    chargepoint        jsonb NOT NULL,      -- item de /chargepoints
+    pricing            jsonb,               -- {connectorPk: dynamicPricingDetailList} (só conectores com preço dinâmico)
+    pricing_fetched_at timestamptz,
+    fetched_at         timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS oncharge_chargepoint_mun ON oncharge_chargepoint (municipio_id);
 
 CREATE TABLE IF NOT EXISTS station (
     id             serial PRIMARY KEY,
@@ -263,6 +291,7 @@ DROP VIEW IF EXISTS current_prices;
 CREATE VIEW current_prices AS
 SELECT
     s.id            AS station_id,
+    so.slug         AS source,
     s.name          AS station,
     s.brand,
     s.address,
@@ -294,6 +323,7 @@ SELECT
     (SELECT count(*) FROM tariff_window w WHERE w.tariff_id = t.id) AS windows
 FROM connector c
 JOIN station s ON s.id = c.station_id
+JOIN source so ON so.id = s.source_id
 LEFT JOIN municipio m ON m.id = s.municipio_id
 LEFT JOIN uf u ON u.id = m.uf_id
 LEFT JOIN tariff t ON t.connector_id = c.id AND t.valid_to IS NULL;

@@ -13,7 +13,7 @@ from psycopg.types.json import Jsonb
 
 from .config import settings
 from .geo import Municipio
-from .models import StationObs, TariffObs
+from .models import ConnectorObs, StationObs, TariffObs
 
 log = logging.getLogger(__name__)
 
@@ -129,12 +129,22 @@ def apply_tariff(conn: psycopg.Connection, connector_id: int, src_id: int, t: Ta
     return ("changed" if cur else "new"), (dict(cur) if cur else None)
 
 
+def tariff_of(s: StationObs, c: ConnectorObs) -> TariffObs | None:
+    """Tarifa que vale para a tomada: a própria, se a fonte informa por conector; senão a da estação."""
+    return c.tariff if c.tariff is not None else s.tariff
+
+
 def wanted(s: StationObs) -> list:
     """Conectores da estação que interessam: potência > MIN_POWER_KW e recarga não sabidamente gratuita.
     Lista vazia = estação descartada."""
-    if settings.paid_only and s.tariff is not None and s.tariff.is_free:
-        return []
-    return [c for c in s.connectors if c.power_kw is not None and c.power_kw > settings.min_power_kw]
+    out = []
+    for c in s.connectors:
+        t = tariff_of(s, c)
+        if settings.paid_only and t is not None and t.is_free:
+            continue
+        if c.power_kw is not None and c.power_kw > settings.min_power_kw:
+            out.append(c)
+    return out
 
 
 def run_collection(conn: psycopg.Connection, slug: str, mun: Municipio, stations
@@ -163,8 +173,9 @@ def run_collection(conn: psycopg.Connection, slug: str, mun: Municipio, stations
             for c in connectors:
                 c_id = upsert_connector(conn, st_id, c, now)
                 stats["connectors"] += 1
-                if s.tariff is not None:
-                    outcome, old = apply_tariff(conn, c_id, src_id, s.tariff, now)
+                t = tariff_of(s, c)
+                if t is not None:
+                    outcome, old = apply_tariff(conn, c_id, src_id, t, now)
                     stats[outcome] += 1
                     if outcome != "same":
                         log.info("tarifa %s: %s / conector %s", outcome, s.name, c.external_id)
@@ -173,8 +184,8 @@ def run_collection(conn: psycopg.Connection, slug: str, mun: Municipio, stations
                             "connector": c.external_id, "plug": c.plug_type, "power_kw": c.power_kw,
                             "outcome": outcome,
                             "old": {k: old[k] for k in TARIFF_FIELDS} if old else None,
-                            "new": {k: getattr(s.tariff, k) for k in TARIFF_FIELDS},
-                            "new_windows": [(w.start_time, w.end_time, w.price_kwh) for w in s.tariff.windows],
+                            "new": {k: getattr(t, k) for k in TARIFF_FIELDS},
+                            "new_windows": [(w.start_time, w.end_time, w.price_kwh) for w in t.windows],
                         })
             conn.commit()
     except Exception as e:
