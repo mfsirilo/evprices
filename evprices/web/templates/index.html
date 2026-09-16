@@ -43,22 +43,6 @@
 </form>
 
 {% if home %}
-<div class="card" style="padding:10px 14px" id="home-card" data-conv="{{ home.convencional.price_kwh }}" data-branca="{{ home.branca.price_kwh if home.branca else '' }}">
-  <div class="row"><div class="grow"><b>Em casa</b> <span class="muted">({{ home.distribuidora }}{% if home.convencional.bandeira %}, bandeira {{ home.convencional.bandeira|lower }}{% endif %})</span></div>
-    <div style="text-align:right;white-space:nowrap"><b>{{ home.convencional.price_kwh|brl }}</b><span class="muted">/kWh</span>
-      {% if home.branca %}<div class="muted">branca fora ponta {{ home.branca.price_kwh|brl }}</div>{% endif %}</div></div>
-  <div class="opt" style="margin-top:6px">
-    <div>
-      <div class="plug">Recarga de <span id="home-kwh">{{ sc.kwh|num }}</span> kWh em casa</div>
-      <div class="fees">com ~10% de perda do carregador de parede: <span id="home-loss">{{ (home.convencional.price_kwh * sc.kwh * 1.1)|brl }}</span>{% if home.branca %} · branca fora ponta <span id="home-branca-total">{{ (home.branca.price_kwh * sc.kwh)|brl }}</span>{% endif %}</div>
-    </div>
-    <div>
-      <div class="price" id="home-total">{{ (home.convencional.price_kwh * sc.kwh)|brl }}</div>
-      <div class="total">vs. melhor eletroposto {% if stations and stations[0].best_total is not none %}<b>{{ stations[0].best_total|brl }}</b>{% else %}—{% endif %}</div>
-    </div>
-  </div>
-  <div class="muted">Tarifa ANEEL + bandeira + ICMS {{ home.uf }} {{ home.icms_pct|num }}% + PIS/COFINS {% if home.piscofins_source == 'aproximado' %}≈{{ home.piscofins_pct|num }}% (aproximado; a distribuidora não publica em formato legível){% else %}{{ home.piscofins_pct|num }}% (publicado: {{ home.piscofins_source }}){% endif %}.</div>
-</div>
 <script>
 // o total de casa acompanha o campo kWh enquanto você digita, antes de enviar o cenário
 (function () {
@@ -86,6 +70,25 @@
 {% endif %}
 
 <div class="grid">
+{% if home %}
+<div class="card stcard" id="home-card" data-conv="{{ home.convencional.price_kwh }}" data-branca="{{ home.branca.price_kwh if home.branca else '' }}">
+  <div class="row brandline"><span class="logo" style="background:var(--chip);font-size:16px">🏠</span>
+    <div class="grow"><div class="name">Em casa</div><div class="muted">{{ home.distribuidora }}{% if home.convencional.bandeira %} · bandeira {{ home.convencional.bandeira|lower }}{% endif %}</div></div>
+    <div style="text-align:right;white-space:nowrap"><b>{{ home.convencional.price_kwh|brl }}</b><span class="muted">/kWh</span>
+      {% if home.branca %}<div class="muted">branca fora ponta {{ home.branca.price_kwh|brl }}</div>{% endif %}</div></div>
+  <div class="opt" style="margin-top:6px">
+    <div>
+      <div class="plug">Recarga de <span id="home-kwh">{{ sc.kwh|num }}</span> kWh em casa</div>
+      <div class="fees">com ~10% de perda do carregador de parede: <span id="home-loss">{{ (home.convencional.price_kwh * sc.kwh * 1.1)|brl }}</span>{% if home.branca %} · branca fora ponta <span id="home-branca-total">{{ (home.branca.price_kwh * sc.kwh)|brl }}</span>{% endif %}</div>
+    </div>
+    <div>
+      <div class="price" id="home-total">{{ (home.convencional.price_kwh * sc.kwh)|brl }}</div>
+      <div class="total">vs. melhor eletroposto {% if stations and stations[0].best_total is not none %}<b>{{ stations[0].best_total|brl }}</b>{% else %}—{% endif %}</div>
+    </div>
+  </div>
+  <div class="muted">Tarifa ANEEL + bandeira + ICMS {{ home.uf }} {{ home.icms_pct|num }}% + PIS/COFINS {% if home.piscofins_source == 'aproximado' %}≈{{ home.piscofins_pct|num }}% (aproximado; a distribuidora não publica em formato legível){% else %}{{ home.piscofins_pct|num }}% (publicado: {{ home.piscofins_source }}){% endif %}.</div>
+</div>
+{% endif %}
 {% for s in stations %}{% include "_station_card.html" %}{% endfor %}
 </div>
 {% endif %}
