@@ -32,7 +32,28 @@
                padding: 10px 16px; display: flex; align-items: center; gap: 12px; }
   header.top h1 { font-size: 18px; margin: 0; flex: 1; }
   header.top nav a { font-size: 14px; color: var(--muted); margin-left: 12px; }
-  header.top nav a#install-btn { color: var(--accent); font-weight: 600; }
+  header.top nav a.install-btn { color: var(--accent); font-weight: 600; }
+  header.top nav a.active { color: var(--fg); font-weight: 600; }
+  /* celular: abas fixas embaixo + folha "Mais"; a barra de cima só mostra o título */
+  nav.tabs { display: none; }
+  @media (max-width: 719px) {
+    header.top nav { display: none; }
+    body { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+    nav.tabs { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+               background: var(--card); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+    nav.tabs a, nav.tabs button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px 6px;
+                                  font-size: 11px; color: var(--muted); background: none; border: 0; font-family: inherit; }
+    nav.tabs .ico { font-size: 20px; line-height: 1; }
+    nav.tabs .active { color: var(--accent); font-weight: 600; }
+  }
+  .sheet { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; }
+  .sheet[hidden] { display: none; }
+  .sheet .panel { width: 100%; background: var(--card); border-radius: 16px 16px 0 0; padding: 8px 8px calc(12px + env(safe-area-inset-bottom)); }
+  .sheet .panel a, .sheet .panel button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 12px; font-size: 16px;
+                                          color: var(--fg); background: none; border: 0; border-radius: 10px; font-family: inherit; text-align: left; }
+  .sheet .panel a:active, .sheet .panel button:active { background: var(--chip); }
+  .sheet .panel .active { color: var(--accent); font-weight: 600; }
+  .sheet .panel .install-btn { color: var(--accent); font-weight: 600; }
   main { padding: 12px 16px 32px; max-width: 720px; margin: 0 auto; }
   .muted { color: var(--muted); font-size: 13px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px;
@@ -132,8 +153,25 @@
 <body>
 <header class="top">
   <h1><a href="/">⚡ evprices</a></h1>
-  <nav><a href="/">Preços</a><a href="/evolucao">Evolução</a><a href="/favoritas">★</a><a href="/viagens">Viagens</a><a href="/municipios">Municípios</a><a href="/runs">Coletas</a><a href="/operadores" title="login dos operadores">🔑</a><a href="#" id="install-btn" hidden title="instalar como app">📲 Instalar</a></nav>
+  <nav data-nav><a href="/">Preços</a><a href="/evolucao">Evolução</a><a href="/favoritas">★ Favoritas</a><a href="/viagens">Viagens</a><a href="/municipios">Municípios</a><a href="/runs">Coletas</a><a href="/operadores" title="login dos operadores">🔑 Operadores</a><a href="/veiculos">🚗 Veículos</a><a href="#" class="install-btn" hidden title="instalar como app">📲 Instalar</a></nav>
 </header>
+<nav class="tabs" data-nav aria-label="principal">
+  <a href="/"><span class="ico">⚡</span>Preços</a>
+  <a href="/viagens"><span class="ico">🧳</span>Viagens</a>
+  <a href="/evolucao"><span class="ico">📈</span>Evolução</a>
+  <a href="/favoritas"><span class="ico">★</span>Favoritas</a>
+  <button type="button" id="more-btn"><span class="ico">☰</span>Mais</button>
+</nav>
+<div class="sheet" id="more" hidden>
+  <div class="panel" data-nav>
+    <a href="/municipios">🗺️ Municípios</a>
+    <a href="/runs">🕓 Coletas</a>
+    <a href="/operadores">🔑 Operadores (login dos apps)</a>
+    <a href="/veiculos">🚗 Veículos</a>
+    <a href="#" class="install-btn" hidden>📲 Instalar como app</a>
+    <button type="button" id="more-close">✕ Fechar</button>
+  </div>
+</div>
 <main>
 <div class="card" id="install-help" hidden></div>
 {% block content %}{% endblock %}</main>
@@ -144,26 +182,41 @@ document.addEventListener('click', e => {
   const a = e.target.closest('a[data-back]'); if (!a) return;
   if (history.length > 1 && document.referrer && new URL(document.referrer).origin === location.origin) { e.preventDefault(); history.back(); }
 });
+// aba/link da página atual
+(function () {
+  const path = location.pathname;
+  document.querySelectorAll('[data-nav] a[href^="/"]').forEach(a => {
+    const h = a.getAttribute('href');
+    const on = h === '/' ? (path === '/' || path.startsWith('/station/')) : path === h || path.startsWith(h + '/');
+    if (on) a.classList.add('active');
+  });
+  const more = document.getElementById('more');
+  document.getElementById('more-btn').addEventListener('click', () => { more.hidden = false; });
+  document.getElementById('more-close').addEventListener('click', () => { more.hidden = true; });
+  more.addEventListener('click', e => { if (e.target === more) more.hidden = true; });
+})();
 // 📲 Instalar: Chrome/Android disparam beforeinstallprompt (só em HTTPS); iPhone só pelo menu Compartilhar.
 (function () {
-  const btn = document.getElementById('install-btn'), help = document.getElementById('install-help');
+  const btns = [...document.querySelectorAll('.install-btn')], help = document.getElementById('install-help');
+  const show = v => btns.forEach(b => { b.hidden = !v; });
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   if (standalone) return;
   const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
   let deferred = null;
-  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; btn.hidden = false; });
-  window.addEventListener('appinstalled', () => { btn.hidden = true; help.hidden = true; });
-  if (ios || !window.isSecureContext) btn.hidden = false;
-  btn.addEventListener('click', async e => {
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; show(true); });
+  window.addEventListener('appinstalled', () => { show(false); help.hidden = true; });
+  if (ios || !window.isSecureContext) show(true);
+  btns.forEach(btn => btn.addEventListener('click', async e => {
     e.preventDefault();
-    if (deferred) { deferred.prompt(); const r = await deferred.userChoice; if (r.outcome === 'accepted') btn.hidden = true; deferred = null; return; }
-    help.hidden = !help.hidden;
+    document.getElementById('more').hidden = true;
+    if (deferred) { deferred.prompt(); const r = await deferred.userChoice; if (r.outcome === 'accepted') show(false); deferred = null; return; }
+    help.hidden = !help.hidden; window.scrollTo({top: 0, behavior: 'smooth'});
     help.innerHTML = !window.isSecureContext
       ? '<b>Instalar como app</b><div class="muted">O navegador só oferece a instalação em <b>HTTPS</b>. Abra o evprices pela URL do túnel (https://…) e toque em 📲 Instalar de novo. Pelo IP da rede local (http://) não é possível.</div>'
       : ios
       ? '<b>Instalar no iPhone/iPad</b><div class="muted">No Safari, toque em <b>Compartilhar</b> (quadrado com seta) → <b>Adicionar à Tela de Início</b> → Adicionar. O app abre em tela cheia com ícone próprio.</div>'
       : '<b>Instalar como app</b><div class="muted">No menu do navegador (⋮) toque em <b>Instalar app</b> / <b>Adicionar à tela inicial</b>. Se a opção não aparecer, recarregue a página uma vez e tente de novo.</div>';
-  });
+  }));
 })();
 // ★ favorita: alterna no servidor (uma lista só, igual em todos os aparelhos)
 document.addEventListener('click', async e => {
