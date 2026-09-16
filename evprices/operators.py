@@ -35,7 +35,7 @@ class Platform:
 
 PLATFORMS: dict[str, Platform] = {
     "oncharge": Platform(
-        slug="oncharge", name="On-Charge", apps="On-Charge, GSOL, BUENO, Green-V, Ecofortte, JC Recarga…",
+        slug="oncharge", name="On-Charge", apps="On-Charge, BUENO, Green-V, Ecofortte, JC Recarga, Leal Charge… (GSOL migrou para a Tupi em 2025)",
         api_key_note="Api-Key do tenant, embutida no app oficial de cada marca (a do app On-Charge é a padrão).",
         env_email="ONCHARGE_EMAIL", env_password="ONCHARGE_PASSWORD", kv_prefix="oncharge:",
         interval_min=settings.oncharge_interval_min,
@@ -202,6 +202,27 @@ def states(conn: psycopg.Connection) -> dict[str, dict[str, Any]]:
     return {slug: state(conn, slug) for slug in PLATFORMS}
 
 
+def alternatives(conn: psycopg.Connection, st: dict[str, Any], radius_m: int = 300) -> list[dict[str, Any]]:
+    """Estações de OUTRAS fontes a até `radius_m` do ponto, com preço vigente — o mesmo eletroposto costuma
+    aparecer em duas plataformas quando o operador troca de app (ex.: GSOL saiu da On-Charge para a Tupi)."""
+    if st.get("lat") is None or st.get("lon") is None:
+        return []
+    return conn.execute(
+        """
+        SELECT s.id, s.name, s.brand, so.slug AS source, s.state,
+               round(ST_Distance(ST_MakePoint(s.lon, s.lat)::geography, ST_MakePoint(%s, %s)::geography)) AS dist_m,
+               min(t.price_kwh) AS price_kwh, max(c.power_kw) AS power_kw
+          FROM station s JOIN source so ON so.id = s.source_id
+          JOIN connector c ON c.station_id = s.id
+          JOIN tariff t ON t.connector_id = c.id AND t.valid_to IS NULL AND t.price_kwh IS NOT NULL
+         WHERE s.id <> %s AND s.source_id <> %s AND s.lat IS NOT NULL
+           AND ST_DWithin(ST_MakePoint(s.lon, s.lat)::geography, ST_MakePoint(%s, %s)::geography, %s)
+         GROUP BY s.id, so.slug ORDER BY (lower(s.brand) = lower(%s)) DESC, dist_m
+        """,
+        (st["lon"], st["lat"], st["id"], st["source_id"], st["lon"], st["lat"], radius_m, st.get("brand") or ""),
+    ).fetchall()
+
+
 def station_access(conn: psycopg.Connection, st: dict[str, Any], connectors: list[dict[str, Any]] | None = None
                    ) -> dict[str, Any] | None:
     """Diagnóstico de acesso ao preço de UMA estação (para o ícone 🔑 e a página /station/{id}/acesso).
@@ -218,21 +239,30 @@ def station_access(conn: psycopg.Connection, st: dict[str, Any], connectors: lis
         "chargepoint->>'hasPayment' AS has_payment, pricing IS NOT NULL AS has_pricing "
         "FROM oncharge_chargepoint WHERE chargebox_pk::text = %s", (st["external_id"],)).fetchone()
     raw = st.get("raw") or {}
+    alts = [] if priced else alternatives(conn, st)
     if not pl["configured"]:
         reason, action = "sem_login", "Informe o login de uma conta do app: o sincronizador passa a buscar o preço."
     elif pl["waiting_first"]:
         reason, action = "aguardando", "Aguardando a primeira coleta do sincronizador (a cada %.0f min)." % pl["interval_min"]
     elif priced:
         reason, action = "ok", None
+    elif row is None and alts:
+        reason = "migrada"
+        a = alts[0]
+        action = ("Este cadastro na %s parece desativado (status \"%s\" no mapa público, fora da lista do app): a %.0f m "
+                  "existe %s na fonte %s, com preço — provavelmente o mesmo eletroposto, que trocou de plataforma. "
+                  "Use essa estação; não há conta a configurar aqui."
+                  % (pl["name"], raw.get("status") or "?", a["dist_m"], a["name"], a["source"]))
     elif row is None:
         reason = "fora_da_lista"
-        action = ("A conta configurada não enxerga esta estação. No mapa público ela está \"%s\"; o app só lista estações "
-                  "ativas. Se ela pertence a outro app da plataforma (%s), cadastre a conta desse app abaixo — com a "
-                  "Api-Key dele, se souber; sem ela fica registrado que falta pesquisar."
-                  % (raw.get("status") or "?", (st.get("brand") or "").upper() or "GSOL, BUENO…"))
+        action = ("Nenhuma conta configurada enxerga esta estação (status \"%s\" no mapa público). Cada app white-label "
+                  "da plataforma só lista as estações do próprio tenant: se você usa o app da marca (%s), cadastre a "
+                  "conta dele abaixo — com a Api-Key desse app; sem ela a conta fica registrada como \"falta a Api-Key\" "
+                  "e não é usada."
+                  % (raw.get("status") or "?", (st.get("brand") or "").upper() or "BUENO, Green-V…"))
     elif row["has_payment"] == "false":
         reason, action = "sem_cobranca", "O app diz que a estação não cobra (hasPayment=false)."
     else:
         reason, action = "sem_preco", "A estação está na lista do app mas veio sem preço — verifique o JSON bruto."
-    return {"platform": pl, "priced": priced, "reason": reason, "action": action, "listed_by": row,
+    return {"platform": pl, "priced": priced, "reason": reason, "action": action, "listed_by": row, "alternatives": alts,
             "public_status": raw.get("status"), "chargebox_id": raw.get("name") or (row and row.get("chargebox_id"))}

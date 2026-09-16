@@ -209,6 +209,15 @@ def _grouped_prices(sc: dict[str, float], municipio_id: int | None, favorites_on
         if r["total"] is not None and (st["best_total"] is None or r["total"] < st["best_total"]):
             st["best_total"] = r["total"]
     out = list(stations.values())
+    unpriced = [st for st in out if st["source"] in operators.PLATFORMS
+                and not any(o["price_kwh"] is not None or o["price_min"] for o in st["options"].values())]
+    if unpriced:
+        with db.connect() as conn:
+            for st in unpriced:
+                first = next(iter(st["options"].values()))
+                alts = operators.alternatives(conn, {"id": st["station_id"], "source_id": first["source_id"],
+                                                     "lat": first["lat"], "lon": first["lon"], "brand": st["brand"]})
+                st["alt"] = alts[0] if alts else None
     for st in out:
         st["priced"] = any(o["price_kwh"] is not None or o["price_min"] for o in st["options"].values())
         st["options"] = sorted(
@@ -449,6 +458,11 @@ def station_page(request: Request, station_id: int, from_: str | None = Query(No
             ).fetchall()
     st["priced"] = any(t["price_kwh"] is not None or t["price_min"] for c in connectors for t in c["tariffs"]
                        if t["valid_to"] is None)
+    st["alt"] = None
+    if not st["priced"] and st["source"] in operators.PLATFORMS:
+        with db.connect() as conn:
+            alts = operators.alternatives(conn, st)
+            st["alt"] = alts[0] if alts else None
     resp = templates.TemplateResponse(
         request, "station.html", {"st": st, "connectors": connectors, "mun": mun, "evo": evo, "home": home, "rng": rng,
                                   "ops": ops}
@@ -498,7 +512,9 @@ def operador_save(platform: str, slug: str = Form(""), name: str = Form(""), ema
             operators.delete_account(conn, slug)
             return RedirectResponse(f"/operadores/{platform}?ok=conta+removida", status_code=303)
         saved = _account_form(platform, slug, name, email, password, api_key, None, conn)
-    return RedirectResponse(f"/operadores/{platform}?ok=conta+salva&acct={saved}", status_code=303)
+        a = operators.account(conn, saved)
+    msg = "conta salva" if a and a["api_key"] else "conta salva, mas SEM Api-Key: o sincronizador só a usa quando a chave for informada"
+    return RedirectResponse(f"/operadores/{platform}?ok={msg}&acct={saved}", status_code=303)
 
 
 @app.get("/station/{station_id}/acesso", response_class=HTMLResponse)
@@ -525,8 +541,10 @@ def station_access_save(station_id: int, platform: str = Form(...), slug: str = 
     with db.connect() as conn:
         st = _station(conn, station_id)
         note = f"cadastrada pela estação {st['name']} (#{station_id})"
-        _account_form(platform, slug, name, email, password, api_key, note, conn)
-    return RedirectResponse(f"/station/{station_id}/acesso?ok=conta+salva", status_code=303)
+        saved = _account_form(platform, slug, name, email, password, api_key, note, conn)
+        a = operators.account(conn, saved)
+    msg = "conta salva" if a and a["api_key"] else "conta salva, mas SEM Api-Key: o sincronizador só a usa quando a chave for informada"
+    return RedirectResponse(f"/station/{station_id}/acesso?ok={msg}", status_code=303)
 
 
 @app.get("/api/operators")

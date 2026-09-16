@@ -38,7 +38,7 @@ Sem mapa, sem redistribuição.
 | plataforma | apps (Play Store) | cobertura |
 |---|---|---|
 | Tupi / Tupinambá (`com.tupi.*`, `tupimob`) | BYD Recharge, Shell Recharge, WEG/wemob, EON, Ative Charge, Cia Charge, Nordeste Eletropostos, EV Eletroposto, Voltz, Plugo, BR Super Carga | ✅ coletor `tupi` |
-| On-Charge | GSOL, BUENO, Green-V, Ecofortte, JC Recarga | ✅ `oncharge` (API do app, com login: preço fixo e dinâmico) |
+| On-Charge | BUENO, Green-V, Ecofortte, JC Recarga, Leal Charge (GSOL migrou para a Tupi em 2025: app "GSOL Connect" = `com.tupi.jaguatirica`) | ✅ `oncharge` (API do app, com login: preço fixo e dinâmico) |
 | Turbo Station | Turbo Station | ✅ `turbostation` |
 | Clube Charger | Clube Charger (+ Eletrovias, Watts Mobi, Zap Charge…) | ✅ `clubecharger` |
 | Bow Energy | Bow | ✅ `bow` |
@@ -92,7 +92,11 @@ roda conta a conta (token, erro e estatísticas por conta em `kv`). Conta sem `A
 **Na UI**: o card e a página da estação têm o ícone 🔑, que é **por estação**: "preço só com login — configurar",
 "aguardando a primeira coleta", "⚠️ preço desconhecido — configurar acesso" ou "sincronizado HH:MM". Ele abre
 `/station/{id}/acesso`, que diagnostica a estação (está na lista do app? por qual conta? status no mapa público?
-cobra?) e permite informar o login ou cadastrar a conta do app da marca (com a `Api-Key`, se souber). `/operadores`
+cobra?) e permite informar o login ou cadastrar a conta do app da marca (com a `Api-Key`, se souber). Cada app
+white-label só lista as estações do próprio tenant: a conta On-Charge enxerga ~500 das ~590 do mapa público.
+Antes de pedir conta, a página procura **a mesma estação em outra fonte** (até 300 m, com preço): operador que
+trocou de plataforma deixa o cadastro antigo "Unavailable" na On-Charge (caso GSOL → Tupi) e o card já aponta
+para a estação equivalente. `/operadores`
 lista todas as contas por plataforma e as plataformas que ainda **faltam a chave do app** (Voltbras, EZVolt/MyCharge,
 movE). `python -m evprices.run sync-oncharge` força um ciclo à mão (depuração).
 

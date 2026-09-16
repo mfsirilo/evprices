@@ -307,6 +307,7 @@ DROP VIEW IF EXISTS current_prices;
 CREATE VIEW current_prices AS
 SELECT
     s.id            AS station_id,
+    s.source_id,
     so.slug         AS source,
     s.name          AS station,
     s.brand,
