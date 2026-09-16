@@ -66,5 +66,5 @@
   <tr><th>Plataforma</th><th>Apps</th><th>O que falta</th></tr>
   {% for p in pending %}<tr><td><b>{{ p.name }}</b></td><td>{{ p.apps }}</td><td class="fee-bad">{{ p.api_key_note }}</td></tr>{% endfor %}
 </table></div>
-<p class="muted"><a href="/api/operators">JSON</a> · <a href="/">← voltar</a></p>
+<p><a class="btn ghost" href="/" data-back>← voltar</a></p>
 {% endblock %}

@@ -32,6 +32,7 @@
                padding: 10px 16px; display: flex; align-items: center; gap: 12px; }
   header.top h1 { font-size: 18px; margin: 0; flex: 1; }
   header.top nav a { font-size: 14px; color: var(--muted); margin-left: 12px; }
+  header.top nav a#install-btn { color: var(--accent); font-weight: 600; }
   main { padding: 12px 16px 32px; max-width: 720px; margin: 0 auto; }
   .muted { color: var(--muted); font-size: 13px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px;
@@ -131,11 +132,39 @@
 <body>
 <header class="top">
   <h1><a href="/">⚡ evprices</a></h1>
-  <nav><a href="/">Preços</a><a href="/evolucao">Evolução</a><a href="/favoritas">★</a><a href="/viagens">Viagens</a><a href="/municipios">Municípios</a><a href="/runs">Coletas</a><a href="/operadores" title="login dos operadores">🔑</a></nav>
+  <nav><a href="/">Preços</a><a href="/evolucao">Evolução</a><a href="/favoritas">★</a><a href="/viagens">Viagens</a><a href="/municipios">Municípios</a><a href="/runs">Coletas</a><a href="/operadores" title="login dos operadores">🔑</a><a href="#" id="install-btn" hidden title="instalar como app">📲 Instalar</a></nav>
 </header>
-<main>{% block content %}{% endblock %}</main>
+<main>
+<div class="card" id="install-help" hidden></div>
+{% block content %}{% endblock %}</main>
 <script>
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw', {scope: '/'}).catch(() => {});
+// "← voltar": volta no histórico quando há de onde voltar; senão segue o href
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[data-back]'); if (!a) return;
+  if (history.length > 1 && document.referrer && new URL(document.referrer).origin === location.origin) { e.preventDefault(); history.back(); }
+});
+// 📲 Instalar: Chrome/Android disparam beforeinstallprompt (só em HTTPS); iPhone só pelo menu Compartilhar.
+(function () {
+  const btn = document.getElementById('install-btn'), help = document.getElementById('install-help');
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  if (standalone) return;
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  let deferred = null;
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; btn.hidden = false; });
+  window.addEventListener('appinstalled', () => { btn.hidden = true; help.hidden = true; });
+  if (ios || !window.isSecureContext) btn.hidden = false;
+  btn.addEventListener('click', async e => {
+    e.preventDefault();
+    if (deferred) { deferred.prompt(); const r = await deferred.userChoice; if (r.outcome === 'accepted') btn.hidden = true; deferred = null; return; }
+    help.hidden = !help.hidden;
+    help.innerHTML = !window.isSecureContext
+      ? '<b>Instalar como app</b><div class="muted">O navegador só oferece a instalação em <b>HTTPS</b>. Abra o evprices pela URL do túnel (https://…) e toque em 📲 Instalar de novo. Pelo IP da rede local (http://) não é possível.</div>'
+      : ios
+      ? '<b>Instalar no iPhone/iPad</b><div class="muted">No Safari, toque em <b>Compartilhar</b> (quadrado com seta) → <b>Adicionar à Tela de Início</b> → Adicionar. O app abre em tela cheia com ícone próprio.</div>'
+      : '<b>Instalar como app</b><div class="muted">No menu do navegador (⋮) toque em <b>Instalar app</b> / <b>Adicionar à tela inicial</b>. Se a opção não aparecer, recarregue a página uma vez e tente de novo.</div>';
+  });
+})();
 // ★ favorita: alterna no servidor (uma lista só, igual em todos os aparelhos)
 document.addEventListener('click', async e => {
   const b = e.target.closest('button[data-fav]'); if (!b) return;

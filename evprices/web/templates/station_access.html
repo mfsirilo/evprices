@@ -4,7 +4,8 @@
 {% set pl = acc.platform %}
 <div class="card">
   <div class="name" style="white-space:normal">{{ st.name }}</div>
-  <div class="muted">{{ st.address or "" }} · <a href="/station/{{ st.id }}">← voltar à estação</a></div>
+  <div class="muted">{{ st.address or "" }}</div>
+  <div style="margin-top:8px"><a class="btn ghost small" href="/station/{{ st.id }}" data-back>← voltar à estação</a></div>
 </div>
 {% if ok %}<div class="card ok-msg">✔ {{ ok }}. O próximo ciclo do sincronizador (a cada {{ pl.interval_min|num }} min) usa a conta.</div>{% endif %}
 

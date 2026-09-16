@@ -6,6 +6,7 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait",
   "lang": "pt-BR",
   "background_color": "#0f172a",
@@ -19,6 +20,7 @@
   "shortcuts": [
     { "name": "Preços", "url": "/", "icons": [{ "src": "/static/pwa/icon-192.png", "sizes": "192x192" }] },
     { "name": "Evolução", "url": "/evolucao", "icons": [{ "src": "/static/pwa/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Viagens", "url": "/viagens", "icons": [{ "src": "/static/pwa/icon-192.png", "sizes": "192x192" }] },
     { "name": "Municípios", "url": "/municipios", "icons": [{ "src": "/static/pwa/icon-192.png", "sizes": "192x192" }] }
   ]
 }

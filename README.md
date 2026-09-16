@@ -153,8 +153,10 @@ O ranking e o gráfico mostram quanto custa o kWh **na sua casa**, para comparar
 
 ## Instalar no celular (PWA)
 
-Abra a URL **HTTPS** do túnel Cloudflare no celular e use "Adicionar à tela inicial" (Android: menu ⋮ →
-Instalar app; iPhone: Compartilhar → Adicionar à Tela de Início). Abre em tela cheia, com ícone próprio e
+Abra a URL **HTTPS** do túnel Cloudflare no celular e toque em **📲 Instalar** na barra: no Android/Chrome ele abre o
+prompt de instalação do navegador (o botão só aparece quando o navegador considera o app instalável — manifest, service
+worker e HTTPS); no iPhone ele mostra o caminho (Safari: Compartilhar → Adicionar à Tela de Início), pois a Apple não
+permite prompt. Aberto em HTTP (IP da LAN) o botão explica que precisa do HTTPS. Abre em tela cheia, com ícone próprio e
 atalhos (Preços / Evolução / Municípios). O service worker (`/sw.js`) guarda as páginas já vistas e mostra
 `/offline` sem conexão; `/api/*` nunca vai para o cache. Pelo IP da LAN em HTTP o navegador não oferece
 a instalação (mesma regra do GPS).

@@ -8,7 +8,7 @@
     <a class="btn small" href="{{ maps }}" target="_blank" rel="noopener">🧭 Google Maps{% if plan.stops %} com as paradas{% endif %}</a>
     <form method="post" action="/viagens/{{ t.id }}/rota" style="display:inline"><button class="btn ghost small" type="submit">recalcular rota</button></form>
     <form method="post" action="/viagens/{{ t.id }}/excluir" style="display:inline" onsubmit="return confirm('Excluir esta viagem?')"><button class="btn ghost small" type="submit">excluir</button></form>
-    <a class="btn ghost small" href="/viagens">← viagens</a>
+    <a class="btn ghost small" href="/viagens" data-back>← voltar</a>
   </div>
 </div>
 {% if ok %}<div class="card ok-msg">✔ {{ ok }}</div>{% endif %}
@@ -117,7 +117,7 @@
   <tr><td colspan="4" class="muted">nenhuma estação compatível a até {{ (pp.detour_km or settings.trip_detour_km)|num }} km da rota — colete o corredor ou aumente o desvio.</td></tr>
   {% endfor %}
 </table></div>
-<p class="muted"><a href="/api/trip/{{ t.id }}/plan">JSON</a> · <a href="/api/trip/{{ t.id }}/route">rota (GeoJSON)</a> · modelo: potência plena até 80 % e 40 % dela acima; 5 % de perda na recarga; desvio = 2 × distância em linha reta × 1,3 a 40 km/h; {{ pp.stop_overhead_min|num }} min por parada.</p>
+<p class="muted">Modelo: potência plena até 80 % e 40 % dela acima; 5 % de perda na recarga; desvio = 2 × distância em linha reta × 1,3 a 40 km/h; {{ pp.stop_overhead_min|num }} min por parada.</p>
 <script src="/static/rangesync.js"></script>
 <script>
 (function () {
