@@ -107,16 +107,31 @@ ON CONFLICT (slug) DO NOTHING;
 UPDATE source SET name = 'On-Charge — API do app (login) + mapa web público', kind = 'partner_api',
        base_url = 'https://cs.oncharge.app/api/v1' WHERE slug = 'oncharge' AND kind <> 'partner_api';
 
--- Login por operador (plataformas cuja API exige conta): uma conta serve para todas as estações da plataforma.
--- Gravado pela página /operadores; sem linha aqui vale ONCHARGE_EMAIL/ONCHARGE_PASSWORD do .env.
+-- Contas nas plataformas cuja API exige login (hoje: On-Charge). Uma plataforma pode ter VÁRIAS contas:
+-- os apps white-label (GSOL, BUENO, Green-V…) rodam na mesma API com Api-Key (tenant) própria, e uma conta só
+-- enxerga as estações que o tenant dela publica. Gravado pela página /operadores ou /station/{id}/acesso;
+-- sem linha para a conta 'oncharge', valem ONCHARGE_EMAIL/ONCHARGE_PASSWORD do .env.
 -- App pessoal: senha em texto no Postgres do container (mesma proteção do resto do banco).
-CREATE TABLE IF NOT EXISTS operator_credential (
-    source_slug text PRIMARY KEY REFERENCES source (slug),
-    email       text NOT NULL,
-    password    text NOT NULL,
-    api_key     text,                 -- NULL = usa a do .env / embutida no código
+CREATE TABLE IF NOT EXISTS operator_account (
+    slug        text PRIMARY KEY,           -- 'oncharge', 'gsol', 'bueno'… (minúsculo, sem espaço)
+    platform    text NOT NULL,              -- = source.slug da API ('oncharge')
+    name        text NOT NULL,              -- rótulo na UI ("GSOL (app)")
+    api_key     text,                       -- NULL = desconhecida: sincronizador pula e a UI pede para pesquisar
+    email       text NOT NULL DEFAULT '',
+    password    text NOT NULL DEFAULT '',
+    enabled     boolean NOT NULL DEFAULT true,
+    note        text,                       -- ex.: para qual estação foi criada
     updated_at  timestamptz NOT NULL DEFAULT now()
 );
+-- migração da 1ª versão (uma conta por plataforma)
+DO $$ BEGIN
+    IF to_regclass('operator_credential') IS NOT NULL THEN
+        INSERT INTO operator_account (slug, platform, name, api_key, email, password)
+        SELECT source_slug, source_slug, 'On-Charge (app)', api_key, email, password FROM operator_credential
+        ON CONFLICT (slug) DO NOTHING;
+        DROP TABLE operator_credential;
+    END IF;
+END $$;
 
 -- Cache da API do app On-Charge (cs.oncharge.app). Preenchido SÓ pelo sincronizador de intervalo fixo
 -- (evprices/oncharge_sync.py); coletor e UI leem daqui, nunca da API.
@@ -131,6 +146,7 @@ CREATE TABLE IF NOT EXISTS oncharge_chargepoint (
     pricing_fetched_at timestamptz,
     fetched_at         timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE oncharge_chargepoint ADD COLUMN IF NOT EXISTS account text;   -- conta (operator_account.slug) que listou
 CREATE INDEX IF NOT EXISTS oncharge_chargepoint_mun ON oncharge_chargepoint (municipio_id);
 
 CREATE TABLE IF NOT EXISTS station (

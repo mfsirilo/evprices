@@ -1,5 +1,7 @@
-{# Atalho do operador com login. Espera `op` (de operators.states). Nunca dispara chamada à API. #}
-{% if not op.configured %}<a class="keylink" href="/operadores/{{ op.slug }}">🔑 informar login {{ op.name }} para ver o preço</a>
-{% elif op.waiting_first %}<a class="keylink ok" href="/operadores/{{ op.slug }}">⏳ {{ op.name }}: aguardando a primeira coleta</a>
-{% elif op.last_error %}<a class="keylink" href="/operadores/{{ op.slug }}">⚠️ {{ op.name }}: última sincronização falhou</a>
-{% else %}<a class="keylink ok" href="/operadores/{{ op.slug }}">🔑 {{ op.name }} · sincronizado {{ op.last_success_at|dt("%H:%M") }}</a>{% endif %}
+{# Ícone 🔑 por estação. Espera `op` (operators.state da plataforma), `sid` (station id) e `priced` (tem preço?).
+   Nunca dispara chamada à API: leva à tela de configuração. #}
+{% if not op.configured %}<a class="keylink" href="/station/{{ sid }}/acesso">🔑 preço só com login {{ op.name }} — configurar</a>
+{% elif not priced and op.waiting_first %}<a class="keylink ok" href="/station/{{ sid }}/acesso">⏳ {{ op.name }}: aguardando a primeira coleta</a>
+{% elif not priced %}<a class="keylink" href="/station/{{ sid }}/acesso">⚠️ preço desconhecido — configurar acesso</a>
+{% elif op.last_error %}<a class="keylink" href="/station/{{ sid }}/acesso">⚠️ {{ op.name }}: última sincronização falhou</a>
+{% else %}<a class="keylink ok" href="/station/{{ sid }}/acesso">🔑 {{ op.name }} (app) · sincronizado {{ op.last_success_at|dt("%H:%M") }}</a>{% endif %}

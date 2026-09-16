@@ -82,12 +82,19 @@ Só ~40 % das estações têm preço dinâmico; as outras usam o fixo da lista. 
    Depois grava o cache e leva para `station/connector/tariff` (histórico) de cada município monitorado.
 4. Ciclo com erro não encurta o intervalo: registra o erro (`/operadores`, notificação) e espera o próximo horário.
 
-**Credenciais**: e-mail/senha da **sua** conta do app, uma vez, valendo para todas as estações do operador.
-Página `/operadores` (grava em `operator_credential`; tem prioridade) ou `ONCHARGE_EMAIL`/`ONCHARGE_PASSWORD`
-no `.env` (fora do git). A `Api-Key` tem default no código e pode ser sobrescrita (`ONCHARGE_API_KEY` ou na página).
-O card da estação e a página dela têm o atalho 🔑 para essa tela (sem login / aguardando / erro / sincronizado HH:MM).
-A mesma página lista as plataformas que ainda **faltam a chave do app** (Voltbras, EZVolt/MyCharge, movE).
-`python -m evprices.run sync-oncharge` força um ciclo à mão (depuração).
+**Contas** (`operator_account`): e-mail/senha da **sua** conta do app, uma vez por conta, valendo para todas as
+estações que aquele app enxerga. A plataforma pode ter **várias contas**: os apps white-label (GSOL, BUENO, Green-V…)
+usam a mesma API com `Api-Key` (tenant) própria e cada conta só lista as estações do seu tenant; o sincronizador
+roda conta a conta (token, erro e estatísticas por conta em `kv`). Conta sem `Api-Key` fica cadastrada como
+"falta a Api-Key — pesquisar" e é pulada. A conta padrão `oncharge` pode vir do `.env`
+(`ONCHARGE_EMAIL`/`ONCHARGE_PASSWORD`, fora do git; a linha no banco tem prioridade); a `Api-Key` dela tem default no código.
+
+**Na UI**: o card e a página da estação têm o ícone 🔑, que é **por estação**: "preço só com login — configurar",
+"aguardando a primeira coleta", "⚠️ preço desconhecido — configurar acesso" ou "sincronizado HH:MM". Ele abre
+`/station/{id}/acesso`, que diagnostica a estação (está na lista do app? por qual conta? status no mapa público?
+cobra?) e permite informar o login ou cadastrar a conta do app da marca (com a `Api-Key`, se souber). `/operadores`
+lista todas as contas por plataforma e as plataformas que ainda **faltam a chave do app** (Voltbras, EZVolt/MyCharge,
+movE). `python -m evprices.run sync-oncharge` força um ciclo à mão (depuração).
 
 ## Referência "em casa" (tarifa da distribuidora)
 
@@ -149,7 +156,8 @@ docker compose exec db psql -U evprices -d evprices                    # SQL dir
 | `/evolucao?m=ID&from=now-7d&to=now` | gráfico: um painel por estação com a evolução do R$/kWh em degraus; período estilo Zabbix (`now-30d`, `now/M`, `now-1M/M`, `2026-09-01 14:00`; unidades m h d w M y), com períodos rápidos e última escolha lembrada |
 | `/favoritas` | estações marcadas com ★ (de todos os municípios) pelo custo do cenário; `/?fav=1` filtra o ranking |
 | `/municipios` | municípios monitorados, estado da coleta, parar/retomar |
-| `/operadores` · `/operadores/{slug}` | login por operador (On-Charge) + estado do sincronizador; `POST` grava/remove |
+| `/operadores` · `/operadores/{platform}` | contas por plataforma (On-Charge) + estado do sincronizador; `POST` grava/remove conta |
+| `/station/{id}/acesso` | por que a estação está sem preço + informar login / cadastrar conta do app da marca (`POST`) |
 | `/api/operators` | JSON do estado dos operadores (sem segredos) |
 | `/station/{id}` | tomadas da estação + histórico de tarifas; endereço abre o app de mapas (Google/Apple) e botão de rotas |
 | `/runs` | log das coletas (por município e fonte) |

@@ -170,13 +170,18 @@ def normalize_app(cp: dict[str, Any], pricing: dict[str, Any] | None) -> Station
         if current is None and c.get("currentType"):
             current = "DC" if "direct" in c["currentType"] else "AC"
         power = _dec(c.get("powerMax"))
+        if power is not None:
+            power = (power / 1000).quantize(Decimal("0.1"))
+        else:                       # app às vezes manda powerMax nulo; a descrição traz "CCS2 - 40kW"
+            m = _POWER.search(desc)
+            power = Decimal(m.group(1).replace(",", ".")) if m else None
         details = (pricing or {}).get(str(c.get("connectorPk"))) if c.get("dynamicPricingUuid") else None
         tariff = dynamic_tariff(details, cp) if details else fixed_tariff(cp, c)
         if c.get("dynamicPricingUuid") and not details:
             tariff.notes = (tariff.notes or "") + "; tomada tem preço dinâmico ainda não sincronizado"
         connectors.append(ConnectorObs(
             external_id=str(c.get("connectorId") or c.get("connectorPk")), plug_type=plug, current_type=current,
-            power_kw=(power / 1000).quantize(Decimal("0.1")) if power is not None else None,
+            power_kw=power,
             state=(c.get("lastStatus") or {}).get("status"), tariff=tariff,
         ))
     if cp.get("isOpen_24Hours"):
@@ -286,7 +291,7 @@ def collect(mun: Municipio) -> Iterator[StationObs]:
         log.info("oncharge(geojson): %d estações só no mapa público em %s", len(extra), mun.label)
         yield from extra
         return
-    if operators.credentials(mun.conn, SOURCE_SLUG):
-        log.info("oncharge: credencial configurada, aguardando a primeira sincronização (nada a coletar)")
+    if operators.accounts(mun.conn, SOURCE_SLUG, only_usable=True):
+        log.info("oncharge: conta configurada, aguardando a primeira sincronização (nada a coletar)")
         return
     yield from collect_geojson(mun)

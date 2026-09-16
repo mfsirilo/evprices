@@ -176,8 +176,8 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "sync-oncharge":
         with db.connect() as conn:
             r = oncharge_sync.sync(conn)
-        log.info("oncharge: %s", r if r is not None else "sem credencial configurada (.env ou /operadores)")
-        return 0 if r is not None and "error" not in r else 1
+        log.info("oncharge: %s", r if r is not None else "sem conta utilizável (.env ou /operadores)")
+        return 0 if r and all("error" not in x for x in r.values()) else 1
     sources = a.source or list(COLLECTORS)
     if a.cmd == "collect":
         return 0 if cmd_collect(a.municipio, sources) else 1

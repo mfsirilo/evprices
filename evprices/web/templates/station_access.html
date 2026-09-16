@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{{ st.name }} — acesso ao preço{% endblock %}
+{% block content %}
+{% set pl = acc.platform %}
+<div class="card">
+  <div class="name" style="white-space:normal">{{ st.name }}</div>
+  <div class="muted">{{ st.address or "" }} · <a href="/station/{{ st.id }}">← voltar à estação</a></div>
+</div>
+{% if ok %}<div class="card ok-msg">✔ {{ ok }}. O próximo ciclo do sincronizador (a cada {{ pl.interval_min|num }} min) usa a conta.</div>{% endif %}
+
+<h2>Por que {% if acc.priced %}o preço vem do app{% else %}o preço está desconhecido{% endif %}</h2>
+<div class="card">
+  <div>Fonte: <b>{{ pl.name }}</b> (API do app, exige conta) · ID no mapa público <code>{{ st.external_id }}</code>{% if acc.chargebox_id %} · chargeBoxId <code>{{ acc.chargebox_id }}</code>{% endif %}</div>
+  <div class="muted" style="margin-top:4px">
+    {% if acc.public_status %}status no mapa público: <span class="state-{{ acc.public_status }}">{{ acc.public_status }}</span> · {% endif %}
+    {% if acc.listed_by %}listada no app pela conta <b>{{ acc.listed_by.account }}</b> (tenant {{ acc.listed_by.tenant or "?" }}, ativa={{ acc.listed_by.active }}, cobra={{ acc.listed_by.has_payment }}) em {{ acc.listed_by.fetched_at|dt }}
+    {% else %}<b>não aparece</b> na lista do app de nenhuma conta configurada{% endif %}
+  </div>
+  {% if acc.action %}<div style="margin-top:8px" class="{% if acc.reason == 'ok' %}muted{% else %}fee-bad{% endif %}">{{ acc.action }}</div>{% endif %}
+  {% if pl.last_error %}<div class="fee-bad" style="margin-top:6px">⚠️ última sincronização: {{ pl.last_error }}</div>{% endif %}
+  {% if pl.missing_key %}<div class="fee-bad" style="margin-top:6px">🔎 Falta a Api-Key da(s) conta(s): {% for a in pl.missing_key %}<b>{{ a.name }}</b>{% if not loop.last %}, {% endif %}{% endfor %} — sem ela o sincronizador não consegue usar a conta. É preciso extrair a chave do app correspondente (tráfego/APK).</div>{% endif %}
+</div>
+
+<h2>Contas da plataforma {{ pl.name }}</h2>
+{% for a in pl.accounts %}
+<div class="card" style="padding:10px 14px">
+  <div class="row"><div class="grow"><b>{{ a.name }}</b> <span class="muted">({{ a.slug }} · {{ "página" if a.origin == "db" else ".env" }})</span></div>
+    <span class="chip">{% if not a.configured %}sem login{% elif not a.api_key_known %}sem Api-Key{% elif a.last_error %}erro{% elif a.last_success_at %}ok{% else %}aguardando{% endif %}</span></div>
+  <div class="muted">{{ a.email or "—" }} · {{ a.stations }} estações listadas{% if a.last_success_at %} · sincronizado {{ a.last_success_at|dt }}{% endif %}{% if a.note %} · {{ a.note }}{% endif %}</div>
+  {% if a.last_error %}<div class="fee-bad">{{ a.last_error }}</div>{% endif %}
+</div>
+{% endfor %}
+
+{% if not pl.configured %}
+<h2>Informar o login</h2>
+{% else %}
+<h2>Cadastrar outra conta (app da marca)</h2>
+<p class="muted">Os apps GSOL, BUENO, Green-V… usam a mesma API da On-Charge, cada um com a sua <b>Api-Key</b> (tenant) e a sua conta.
+  Se você usa o app da marca desta estação, informe o login dele; a Api-Key, se souber. Sem a chave a conta fica cadastrada como
+  "falta a Api-Key" para lembrar de pesquisar.</p>
+{% endif %}
+<div class="card">
+<form class="cred" method="post" action="/station/{{ st.id }}/acesso" autocomplete="off">
+  <input type="hidden" name="platform" value="{{ pl.slug }}">
+  {% if pl.configured %}
+  <div><label>conta (identificador curto; use um existente para atualizar)</label><input type="text" name="slug" value="{{ suggested.slug }}" placeholder="gsol" required></div>
+  <div><label>nome do app/marca</label><input type="text" name="name" value="{{ suggested.name }}" placeholder="GSOL (app)"></div>
+  {% else %}
+  <input type="hidden" name="slug" value="oncharge"><input type="hidden" name="name" value="On-Charge (app)">
+  {% endif %}
+  <div><label>e-mail da conta</label><input type="email" name="email" required autocomplete="username"></div>
+  <div><label>senha</label><input type="password" name="password" autocomplete="current-password" placeholder="em branco = manter a gravada"></div>
+  <div><label>Api-Key do app {% if not pl.configured %}(vazio = padrão da On-Charge){% else %}(vazio = desconhecida, fica marcado para pesquisar){% endif %}</label><input type="text" name="api_key" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
+  <div class="actions"><button class="btn" type="submit">Salvar</button><a class="btn ghost" href="/operadores/{{ pl.slug }}">todas as contas</a></div>
+</form>
+</div>
+
+{% if cached %}
+<details><summary class="muted">JSON bruto da estação no app</summary><pre class="tbl" style="font-size:12px">{{ cached|tojson(indent=1) }}</pre></details>
+{% endif %}
+{% endblock %}

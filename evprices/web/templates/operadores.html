@@ -1,43 +1,61 @@
 {% extends "base.html" %}
 {% block title %}evprices — operadores{% endblock %}
 {% block content %}
-<p class="muted">Plataformas cujo app exige conta. Informe o login <b>uma vez</b>: ele vale para todas as estações do operador.
-  A consulta roda sozinha no collector em horário fixo (nunca ao abrir uma tela); as páginas mostram a última coleta gravada.</p>
-{% if ok %}<div class="card ok-msg">✔ {{ ok }}. O próximo ciclo do sincronizador usa o novo login.</div>{% endif %}
+<p class="muted">Plataformas cujo app exige conta. Informe o login <b>uma vez</b> por conta: ele vale para todas as estações que
+  aquele app enxerga. A consulta roda sozinha no collector em horário fixo (nunca ao abrir uma tela); as páginas mostram a última coleta gravada.</p>
+{% if ok %}<div class="card ok-msg">✔ {{ ok }}. O próximo ciclo do sincronizador usa a conta.</div>{% endif %}
 
 {% for o in ops.values() %}
-<div class="card" id="{{ o.slug }}" {% if slug == o.slug %}style="border-color:var(--accent)"{% endif %}>
+<div class="card" id="{{ o.slug }}" {% if focus == o.slug %}style="border-color:var(--accent)"{% endif %}>
   <div class="row"><div class="grow"><div class="name">{{ o.name }}</div><div class="muted">{{ o.apps }}</div></div>
-    <span class="chip">{% if o.configured %}configurado{% else %}sem login{% endif %}</span></div>
-
+    <span class="chip">{% if o.configured %}{{ o.accounts|selectattr("usable")|list|length }} conta(s){% else %}sem login{% endif %}</span></div>
   <div class="muted" style="margin:8px 0">
-    {% if not o.configured %}
-      Sem e-mail/senha: as estações entram pelo mapa público, <b>sem preço</b>.
-    {% elif o.waiting_first %}
-      <span class="spin"></span> Aguardando a primeira coleta (a cada {{ o.interval_min|num }} min). Login de <b>{{ o.email }}</b>
-      ({{ "página" if o.origin == "db" else ".env" }}).
-    {% else %}
-      Login de <b>{{ o.email }}</b> ({{ "página" if o.origin == "db" else ".env" }}) · a cada {{ o.interval_min|num }} min ·
-      última coleta <b>{{ o.last_success_at|dt }}</b> · {{ o.cached_stations }} estações no cache
+    {% if not o.configured %}Sem conta utilizável: as estações entram pelo mapa público, <b>sem preço</b>.
+    {% elif o.waiting_first %}<span class="spin"></span> Aguardando a primeira coleta (a cada {{ o.interval_min|num }} min).
+    {% else %}A cada {{ o.interval_min|num }} min · última coleta <b>{{ o.last_success_at|dt }}</b> · {{ o.cached_stations }} estações no cache
       {% if o.last_attempt_at and o.last_attempt_at != o.last_success_at %} · última tentativa {{ o.last_attempt_at|dt }}{% endif %}
-      · token {{ "guardado" if o.token else "ausente (fará login no próximo ciclo)" }}
     {% endif %}
-    {% if o.last_error %}<div class="fee-bad">⚠️ {{ o.last_error }}</div>{% endif %}
+    {% if o.missing_key %}<div class="fee-bad">🔎 Falta a Api-Key de: {% for a in o.missing_key %}<b>{{ a.name }}</b>{% if not loop.last %}, {% endif %}{% endfor %} — pesquisar a chave embutida no app.</div>{% endif %}
   </div>
 
-  <form class="cred" method="post" action="/operadores/{{ o.slug }}" autocomplete="off">
-    <div><label>e-mail da conta {{ o.name }}</label><input type="email" name="email" value="{{ o.email }}" required autocomplete="username"></div>
-    <div><label>senha</label><input type="password" name="password" required autocomplete="current-password" placeholder="{{ 'gravada — digite para trocar' if o.configured else '' }}"></div>
-    <details><summary class="muted">Api-Key do tenant (avançado)</summary>
-      <div class="muted">{{ o.api_key_note }} Deixe vazio para usar a padrão{% if o.api_key_overridden %} (hoje: sobrescrita por aqui){% endif %}.</div>
-      <input type="text" name="api_key" placeholder="padrão do .env / código" autocomplete="off">
-    </details>
-    <div class="actions">
-      <button class="btn" type="submit" name="action" value="save">Salvar</button>
-      {% if o.origin == "db" %}<button class="btn ghost" type="submit" name="action" value="delete" formnovalidate onclick="return confirm('Remover o login gravado?')">Remover</button>{% endif %}
-      <span class="muted">Variáveis alternativas no .env: {{ o.env_email }} / {{ o.env_password }}</span>
-    </div>
-  </form>
+  {% for a in o.accounts %}
+  <details class="card" style="padding:10px 14px" id="acct-{{ a.slug }}" {% if focus == a.slug or (focus == o.slug and loop.first) %}open{% endif %}>
+    <summary style="cursor:pointer">
+      <b>{{ a.name }}</b> <span class="muted">({{ a.slug }} · {{ "página" if a.origin == "db" else ".env" }}) · {{ a.email or "sem e-mail" }}</span>
+      <span class="chip">{% if not a.configured %}sem login{% elif not a.api_key_known %}sem Api-Key{% elif a.last_error %}erro{% elif a.last_success_at %}ok{% else %}aguardando{% endif %}</span>
+    </summary>
+    <div class="muted" style="margin:6px 0">{{ a.stations }} estações listadas{% if a.last_success_at %} · sincronizado {{ a.last_success_at|dt }}{% endif %}
+      · token {{ "guardado" if a.token else "ausente (fará login no próximo ciclo)" }}{% if a.note %} · {{ a.note }}{% endif %}
+      {% if a.last_error %}<div class="fee-bad">⚠️ {{ a.last_error }}</div>{% endif %}</div>
+    <form class="cred" method="post" action="/operadores/{{ o.slug }}" autocomplete="off">
+      <input type="hidden" name="slug" value="{{ a.slug }}">
+      <div><label>nome</label><input type="text" name="name" value="{{ a.name }}"></div>
+      <div><label>e-mail da conta</label><input type="email" name="email" value="{{ a.email }}" required autocomplete="username"></div>
+      <div><label>senha</label><input type="password" name="password" autocomplete="current-password" placeholder="{{ 'gravada — digite para trocar' if a.configured else '' }}" {% if not a.configured %}required{% endif %}></div>
+      <div><label>Api-Key do app {% if a.api_key_default %}(vazio = padrão da On-Charge){% elif a.api_key_known %}(gravada — digite para trocar){% else %}(DESCONHECIDA — pesquisar){% endif %}</label>
+        <input type="text" name="api_key" placeholder="{{ 'padrão do .env / código' if a.slug == 'oncharge' else 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' }}" autocomplete="off"></div>
+      <div class="actions">
+        <button class="btn" type="submit" name="action" value="save">Salvar</button>
+        {% if a.origin == "db" %}<button class="btn ghost" type="submit" name="action" value="delete" formnovalidate onclick="return confirm('Remover a conta {{ a.slug }}?')">Remover</button>{% endif %}
+        {% if a.slug == "oncharge" %}<span class="muted">ou no .env: {{ o.env_email }} / {{ o.env_password }}</span>{% endif %}
+      </div>
+    </form>
+  </details>
+  {% endfor %}
+
+  <details class="card" style="padding:10px 14px" {% if not o.accounts %}open{% endif %}>
+    <summary style="cursor:pointer"><b>+ adicionar conta</b> <span class="muted">(app de outra marca da plataforma: GSOL, BUENO…)</span></summary>
+    <p class="muted">Cada app white-label usa a mesma API com <b>Api-Key própria</b> e só enxerga as estações do seu tenant. Sem a chave, a conta fica
+      registrada como "falta a Api-Key" para lembrar de pesquisar.</p>
+    <form class="cred" method="post" action="/operadores/{{ o.slug }}" autocomplete="off">
+      <div><label>identificador (curto, sem espaço)</label><input type="text" name="slug" placeholder="gsol" required></div>
+      <div><label>nome do app/marca</label><input type="text" name="name" placeholder="GSOL (app)"></div>
+      <div><label>e-mail da conta</label><input type="email" name="email" required autocomplete="username"></div>
+      <div><label>senha</label><input type="password" name="password" required autocomplete="new-password"></div>
+      <div><label>Api-Key do app (vazio = desconhecida)</label><input type="text" name="api_key" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off"></div>
+      <div class="actions"><button class="btn" type="submit" name="action" value="save">Adicionar</button></div>
+    </form>
+  </details>
 </div>
 {% endfor %}
 

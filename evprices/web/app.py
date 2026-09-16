@@ -210,6 +210,7 @@ def _grouped_prices(sc: dict[str, float], municipio_id: int | None, favorites_on
             st["best_total"] = r["total"]
     out = list(stations.values())
     for st in out:
+        st["priced"] = any(o["price_kwh"] is not None or o["price_min"] for o in st["options"].values())
         st["options"] = sorted(
             st["options"].values(),
             key=lambda o: (o["total"] is None, o["total"] or 0, -(o["power_kw"] or 0)),
@@ -411,15 +412,20 @@ def municipios_page(request: Request):
     return templates.TemplateResponse(request, "municipios.html", {"rows": rows})
 
 
+def _station(conn, station_id: int) -> dict[str, Any]:
+    st = conn.execute("SELECT s.*, so.slug AS source FROM station s JOIN source so ON so.id = s.source_id "
+                      "WHERE s.id = %s", (station_id,)).fetchone()
+    if not st:
+        raise HTTPException(404)
+    return st
+
+
 @app.get("/station/{station_id}", response_class=HTMLResponse)
 def station_page(request: Request, station_id: int, from_: str | None = Query(None, alias="from"),
                  to: str | None = Query(None)):
     rng, from_form = _page_range(request, from_, to)
     with db.connect() as conn:
-        st = conn.execute("SELECT s.*, so.slug AS source FROM station s JOIN source so ON so.id = s.source_id "
-                          "WHERE s.id = %s", (station_id,)).fetchone()
-        if not st:
-            raise HTTPException(404)
+        st = _station(conn, station_id)
         ops = operators.states(conn)
         mun = _municipio(conn, st["municipio_id"]) if st["municipio_id"] else None
         st["favorite"] = station_id in _favorites(conn)
@@ -441,6 +447,8 @@ def station_page(request: Request, station_id: int, from_: str | None = Query(No
                 """,
                 (c["id"],),
             ).fetchall()
+    st["priced"] = any(t["price_kwh"] is not None or t["price_min"] for c in connectors for t in c["tariffs"]
+                       if t["valid_to"] is None)
     resp = templates.TemplateResponse(
         request, "station.html", {"st": st, "connectors": connectors, "mun": mun, "evo": evo, "home": home, "rng": rng,
                                   "ops": ops}
@@ -450,44 +458,80 @@ def station_page(request: Request, station_id: int, from_: str | None = Query(No
 
 
 # ---------- operadores com login (On-Charge…) ----------
+def _account_form(platform: str, slug: str, name: str, email: str, password: str, api_key: str, note: str | None,
+                  conn) -> str:
+    if platform not in operators.PLATFORMS:
+        raise HTTPException(404)
+    if not email.strip():
+        raise HTTPException(422, "informe o e-mail da conta")
+    if not password and not operators.account(conn, operators.slugify(slug or name)):
+        raise HTTPException(422, "informe a senha")
+    return operators.save_account(conn, slug, platform=platform, name=name or slug, email=email, password=password,
+                                  api_key=api_key, note=note)
+
+
 @app.get("/operadores", response_class=HTMLResponse)
-def operadores_page(request: Request, ok: str | None = Query(None)):
-    """Login por operador + estado do sincronizador. Só lê o banco: nunca dispara chamada à API daqui."""
+def operadores_page(request: Request, ok: str | None = Query(None), acct: str | None = Query(None)):
+    """Contas por plataforma + estado do sincronizador. Só lê o banco: nunca dispara chamada à API daqui."""
     with db.connect() as conn:
         ops = operators.states(conn)
     return templates.TemplateResponse(request, "operadores.html",
-                                      {"ops": ops, "pending": operators.PENDING, "ok": ok, "slug": None})
+                                      {"ops": ops, "pending": operators.PENDING, "ok": ok, "focus": acct})
 
 
-@app.get("/operadores/{slug}", response_class=HTMLResponse)
-def operador_page(request: Request, slug: str, ok: str | None = Query(None)):
-    """Mesma página, rolada/focada num operador (atalho 🔑 do card da estação)."""
-    if slug not in operators.OPERATORS:
+@app.get("/operadores/{platform}", response_class=HTMLResponse)
+def operador_page(request: Request, platform: str, ok: str | None = Query(None), acct: str | None = Query(None)):
+    if platform not in operators.PLATFORMS:
         raise HTTPException(404)
     with db.connect() as conn:
         ops = operators.states(conn)
     return templates.TemplateResponse(request, "operadores.html",
-                                      {"ops": ops, "pending": operators.PENDING, "ok": ok, "slug": slug})
+                                      {"ops": ops, "pending": operators.PENDING, "ok": ok, "focus": acct or platform})
 
 
-@app.post("/operadores/{slug}")
-def operador_save(slug: str, email: str = Form(""), password: str = Form(""), api_key: str = Form(""),
-                  action: str = Form("save")):
-    if slug not in operators.OPERATORS:
-        raise HTTPException(404)
+@app.post("/operadores/{platform}")
+def operador_save(platform: str, slug: str = Form(""), name: str = Form(""), email: str = Form(""),
+                  password: str = Form(""), api_key: str = Form(""), action: str = Form("save")):
+    """Cria/atualiza/remove uma conta da plataforma (formulário de /operadores)."""
     with db.connect() as conn:
         if action == "delete":
-            operators.delete_credentials(conn, slug)
-            return RedirectResponse(f"/operadores/{slug}?ok=removido", status_code=303)
-        if not email.strip() or not password:
-            raise HTTPException(422, "informe e-mail e senha")
-        operators.save_credentials(conn, slug, email, password, api_key)
-    return RedirectResponse(f"/operadores/{slug}?ok=salvo", status_code=303)
+            operators.delete_account(conn, slug)
+            return RedirectResponse(f"/operadores/{platform}?ok=conta+removida", status_code=303)
+        saved = _account_form(platform, slug, name, email, password, api_key, None, conn)
+    return RedirectResponse(f"/operadores/{platform}?ok=conta+salva&acct={saved}", status_code=303)
+
+
+@app.get("/station/{station_id}/acesso", response_class=HTMLResponse)
+def station_access_page(request: Request, station_id: int, ok: str | None = Query(None)):
+    """Por que esta estação está sem preço e o que dá para configurar (login/conta/Api-Key). Só banco."""
+    with db.connect() as conn:
+        st = _station(conn, station_id)
+        acc = operators.station_access(conn, st)
+        if acc is None:
+            raise HTTPException(404, "estação de fonte pública: não há login a configurar")
+        cached = conn.execute("SELECT chargepoint FROM oncharge_chargepoint WHERE chargebox_pk::text = %s",
+                              (st["external_id"],)).fetchone()
+    brand = (st.get("brand") or "").lower()
+    suggested = {"slug": brand if brand not in ("", "oncharge") else "", "name": f"{brand.upper()} (app)" if brand not in ("", "oncharge") else ""}
+    return templates.TemplateResponse(request, "station_access.html",
+                                      {"st": st, "acc": acc, "ok": ok, "suggested": suggested,
+                                       "cached": cached["chargepoint"] if cached else None})
+
+
+@app.post("/station/{station_id}/acesso")
+def station_access_save(station_id: int, platform: str = Form(...), slug: str = Form(""), name: str = Form(""),
+                        email: str = Form(""), password: str = Form(""), api_key: str = Form("")):
+    """Cadastra/atualiza a conta (nova ou existente) a partir da página da estação."""
+    with db.connect() as conn:
+        st = _station(conn, station_id)
+        note = f"cadastrada pela estação {st['name']} (#{station_id})"
+        _account_form(platform, slug, name, email, password, api_key, note, conn)
+    return RedirectResponse(f"/station/{station_id}/acesso?ok=conta+salva", status_code=303)
 
 
 @app.get("/api/operators")
 def api_operators():
-    """Estado dos operadores com login (credencial configurada?, última sincronização, erro). Sem segredos."""
+    """Estado das plataformas/contas com login (configurada?, última sincronização, erro). Sem segredos."""
     with db.connect() as conn:
         return operators.states(conn)
 

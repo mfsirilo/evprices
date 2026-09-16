@@ -4,10 +4,11 @@ Regras (para não virar spam nem bloqueio da conta):
   1. Roda só dentro do `loop` do collector, a cada ONCHARGE_INTERVAL_MIN (mínimo 10 min, imposto no config).
   2. Nunca por ação do usuário: abrir tela, pull-to-refresh e "coletar agora" leem o cache
      (tabela oncharge_chargepoint); o coletor `oncharge` também.
-  3. Um ciclo faz tudo: login (só se o token guardado em `kv` faltar/expirar/devolver 401-403) + 1 GET
-     /chargepoints + 1 GET de preço dinâmico por plano (dynamicPricingUuid) das tomadas em municípios
-     monitorados. Grava tudo com timestamp.
-  4. Ciclo com erro não encurta o intervalo: registra o erro e espera o próximo horário.
+  3. Um ciclo faz tudo, para CADA conta cadastrada (operator_account; os apps white-label usam Api-Key
+     própria e cada conta só enxerga as estações do seu tenant): login (só se o token guardado em `kv`
+     faltar/expirar/devolver 401-403) + 1 GET /chargepoints + 1 GET de preço dinâmico por plano
+     (dynamicPricingUuid) das tomadas em municípios monitorados. Grava tudo com timestamp.
+  4. Ciclo com erro não encurta o intervalo: registra o erro (por conta) e espera o próximo horário.
 """
 from __future__ import annotations
 
@@ -29,7 +30,7 @@ from .store import run_collection, source_id
 
 log = logging.getLogger(__name__)
 SLUG = "oncharge"
-KV = operators.OPERATORS[SLUG].kv_prefix
+KV = operators.PLATFORMS[SLUG].kv_prefix
 
 
 def _now() -> datetime:
@@ -43,19 +44,23 @@ def due(conn: psycopg.Connection) -> bool:
     return _now() - datetime.fromisoformat(last) >= timedelta(minutes=settings.oncharge_interval_min)
 
 
-def _client(conn: psycopg.Connection, cred: dict[str, Any]) -> OnChargeClient:
-    exp = operators.kv_get(conn, KV + "token_expires_at")
+def _acct_kv(a: dict[str, Any]) -> str:
+    return f"{KV}acct:{a['slug']}:"
+
+
+def _client(conn: psycopg.Connection, a: dict[str, Any]) -> OnChargeClient:
+    tk = operators.token_key(SLUG, a["slug"])
+    exp = operators.kv_get(conn, tk + "_expires_at")
 
     def persist(token: str, expires_at_ms: int | None) -> None:
-        operators.kv_set(conn, KV + "token", token)
+        operators.kv_set(conn, tk, token)
         if expires_at_ms:
-            operators.kv_set(conn, KV + "token_expires_at", str(expires_at_ms))
+            operators.kv_set(conn, tk + "_expires_at", str(expires_at_ms))
         else:
-            operators.kv_del(conn, KV + "token_expires_at")
+            operators.kv_del(conn, tk + "_expires_at")
         conn.commit()
 
-    return OnChargeClient(cred["email"], cred["password"], cred.get("api_key"),
-                          token=operators.kv_get(conn, KV + "token"),
+    return OnChargeClient(a["email"], a["password"], a["api_key"], token=operators.kv_get(conn, tk),
                           expires_at_ms=int(exp) if exp else None, on_token=persist)
 
 
@@ -77,8 +82,8 @@ def _municipio_of(conn: psycopg.Connection, cps: list[dict[str, Any]]) -> dict[i
     return {r["pk"]: r["id"] for r in rows}
 
 
-def fetch(conn: psycopg.Connection, client: OnChargeClient) -> dict[str, Any]:
-    """Lista + preços dinâmicos; grava o cache. Retorna estatísticas."""
+def fetch(conn: psycopg.Connection, client: OnChargeClient, account: str) -> dict[str, Any]:
+    """Lista + preços dinâmicos de UMA conta; grava o cache marcando a conta. Retorna estatísticas."""
     cps = client.chargepoints()
     if not cps:
         raise RuntimeError("/chargepoints devolveu lista vazia")
@@ -120,10 +125,10 @@ def fetch(conn: psycopg.Connection, client: OnChargeClient) -> dict[str, Any]:
         conn.execute(
             """
             INSERT INTO oncharge_chargepoint (chargebox_pk, chargebox_id, lat, lon, municipio_id, chargepoint,
-                                              pricing, pricing_fetched_at, fetched_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                              pricing, pricing_fetched_at, fetched_at, account)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (chargebox_pk) DO UPDATE SET
-                chargebox_id = EXCLUDED.chargebox_id, lat = EXCLUDED.lat, lon = EXCLUDED.lon,
+                chargebox_id = EXCLUDED.chargebox_id, lat = EXCLUDED.lat, lon = EXCLUDED.lon, account = EXCLUDED.account,
                 municipio_id = EXCLUDED.municipio_id, chargepoint = EXCLUDED.chargepoint,
                 pricing = COALESCE(EXCLUDED.pricing, oncharge_chargepoint.pricing),
                 pricing_fetched_at = CASE WHEN EXCLUDED.pricing IS NULL THEN oncharge_chargepoint.pricing_fetched_at
@@ -132,9 +137,11 @@ def fetch(conn: psycopg.Connection, client: OnChargeClient) -> dict[str, Any]:
             """,
             (cp["chargeBoxPk"], cp.get("chargeBoxId") or str(cp["chargeBoxPk"]), cp.get("locationLatitude"),
              cp.get("locationLongitude"), mun_of.get(cp["chargeBoxPk"]), Jsonb(cp),
-             Jsonb(pricing) if pricing else None, now if pricing else None, now),
+             Jsonb(pricing) if pricing else None, now if pricing else None, now, account),
         )
-    conn.execute("DELETE FROM oncharge_chargepoint WHERE chargebox_pk <> ALL(%s)", ([cp["chargeBoxPk"] for cp in cps],))
+    # estações que ESTA conta listava e não lista mais
+    conn.execute("DELETE FROM oncharge_chargepoint WHERE account = %s AND chargebox_pk <> ALL(%s)",
+                 (account, [cp["chargeBoxPk"] for cp in cps]))
     conn.commit()
     stats["municipios"] = sorted(set(mun_of.values()))
     return stats
@@ -167,38 +174,61 @@ def _store(conn: psycopg.Connection, municipio_ids: list[int]) -> None:
         conn.commit()
 
 
+def _migrate_legacy_token(conn: psycopg.Connection) -> None:
+    """1ª versão guardava o token da conta única em oncharge:token; move para a chave por conta."""
+    old = operators.kv_get(conn, KV + "token")
+    if old is None:
+        return
+    tk = operators.token_key(SLUG, "oncharge")
+    if operators.kv_get(conn, tk) is None:
+        operators.kv_set(conn, tk, old)
+        exp = operators.kv_get(conn, KV + "token_expires_at")
+        if exp:
+            operators.kv_set(conn, tk + "_expires_at", exp)
+    operators.kv_del(conn, KV + "token")
+    operators.kv_del(conn, KV + "token_expires_at")
+    conn.commit()
+
+
 def sync(conn: psycopg.Connection) -> dict[str, Any] | None:
-    """Um ciclo completo. Retorna stats, ou None se não há credencial (nada a fazer)."""
-    cred = operators.credentials(conn, SLUG)
-    if not cred:
+    """Um ciclo completo, conta a conta. Retorna {slug: stats|{'error'}}, ou None se não há conta utilizável."""
+    accts = operators.accounts(conn, SLUG, only_usable=True)
+    if not accts:
         return None
+    _migrate_legacy_token(conn)
     started = _now()
     operators.kv_set(conn, KV + "last_sync_at", started.isoformat())   # antes de tentar: erro não encurta o intervalo
     conn.commit()
-    client = _client(conn, cred)
-    try:
-        stats = fetch(conn, client)
-        _store(conn, stats["municipios"])
-        stats["seconds"] = round((_now() - started).total_seconds(), 1)
-        operators.kv_set(conn, KV + "last_success_at", _now().isoformat())
-        operators.kv_set(conn, KV + "last_stats", json.dumps(stats))
-        operators.kv_del(conn, KV + "last_error")
-        conn.commit()
-        log.info("oncharge: sincronizado %s", stats)
-        return stats
-    except Exception as e:
-        conn.rollback()
-        msg = f"{type(e).__name__}: {e}"
-        if isinstance(e, AuthError):   # token inútil; próximo ciclo refaz o login do zero
-            operators.kv_del(conn, KV + "token")
-            operators.kv_del(conn, KV + "token_expires_at")
-        operators.kv_set(conn, KV + "last_error", msg)
-        conn.commit()
-        log.exception("oncharge: sincronização falhou; próxima tentativa no horário normal")
-        notify_error(SLUG, msg)
-        return {"error": msg}
-    finally:
-        client.close()
+    results: dict[str, Any] = {}
+    municipios: set[int] = set()
+    for a in accts:
+        p = _acct_kv(a)
+        client = _client(conn, a)
+        try:
+            stats = fetch(conn, client, a["slug"])
+            municipios.update(stats["municipios"])
+            operators.kv_set(conn, p + "last_success_at", _now().isoformat())
+            operators.kv_set(conn, p + "last_stats", json.dumps(stats))
+            operators.kv_del(conn, p + "last_error")
+            conn.commit()
+            results[a["slug"]] = stats
+            log.info("oncharge[%s]: %s", a["slug"], stats)
+        except Exception as e:
+            conn.rollback()
+            msg = f"{type(e).__name__}: {e}"
+            if isinstance(e, AuthError):   # token inútil; próximo ciclo refaz o login do zero
+                operators._forget_token(conn, SLUG, a["slug"])
+            operators.kv_set(conn, p + "last_error", msg)
+            conn.commit()
+            log.exception("oncharge[%s]: sincronização falhou; próxima tentativa no horário normal", a["slug"])
+            notify_error(SLUG, f"conta {a['slug']}: {msg}")
+            results[a["slug"]] = {"error": msg}
+        finally:
+            client.close()
+    if any("error" not in r for r in results.values()):
+        _store(conn, sorted(municipios))
+    log.info("oncharge: ciclo concluído em %.1fs (%d conta(s))", (_now() - started).total_seconds(), len(accts))
+    return results
 
 
 def run_if_due(conn: psycopg.Connection) -> None:
