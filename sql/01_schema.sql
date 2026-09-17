@@ -371,11 +371,20 @@ CREATE TABLE IF NOT EXISTS vehicle (
     is_default    boolean NOT NULL DEFAULT false,
     updated_at    timestamptz NOT NULL DEFAULT now()
 );
-ALTER TABLE vehicle ADD COLUMN IF NOT EXISTS range_km numeric(6, 0);   -- autonomia real em estrada com bateria cheia
+ALTER TABLE vehicle ADD COLUMN IF NOT EXISTS range_km numeric;   -- autonomia real em estrada com bateria cheia
+-- autonomia e consumo são a mesma informação (consumo = bateria / autonomia × 100): range_source diz qual dos dois o
+-- usuário digitou; esse é guardado como digitado (sem arredondar) e o outro é derivado.
+ALTER TABLE vehicle ADD COLUMN IF NOT EXISTS range_source text NOT NULL DEFAULT 'autonomia'
+    CHECK (range_source IN ('autonomia', 'consumo'));
+-- valores medidos não têm domínio discreto: numeric sem escala guarda exatamente o que foi digitado
+ALTER TABLE vehicle ALTER COLUMN range_km TYPE numeric;
+ALTER TABLE vehicle ALTER COLUMN kwh_100km TYPE numeric;
+ALTER TABLE vehicle ALTER COLUMN battery_kwh TYPE numeric;
+ALTER TABLE vehicle ALTER COLUMN max_dc_kw TYPE numeric;
 INSERT INTO vehicle (name, battery_kwh, kwh_100km, range_km, max_dc_kw, plug_types, is_default)
 SELECT 'BYD Dolphin GS', 44.9, 16.0, 280, 60, '{"CCS 2"}', true
  WHERE NOT EXISTS (SELECT 1 FROM vehicle);
-UPDATE vehicle SET range_km = round(battery_kwh / kwh_100km * 100) WHERE range_km IS NULL;
+UPDATE vehicle SET range_km = battery_kwh / kwh_100km * 100 WHERE range_km IS NULL;
 
 CREATE TABLE IF NOT EXISTS trip (
     id                 serial PRIMARY KEY,

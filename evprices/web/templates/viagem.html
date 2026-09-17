@@ -39,8 +39,10 @@
       <div><label>reserva mínima %</label><input type="number" name="soc_min" min="0" max="100" step="1" value="{{ pp.soc_min_pct if pp.soc_min_pct is not none else veh.soc_min_pct }}"></div>
       <div><label>teto de carga %</label><input type="number" name="soc_max" min="0" max="100" step="1" value="{{ pp.soc_max_pct if pp.soc_max_pct is not none else veh.soc_max_pct }}"></div>
       <input type="hidden" data-sync="batt" value="{{ veh.battery_kwh }}">
-      <div><label>autonomia real (km, bateria cheia)</label><input type="number" name="range" min="50" step="5" value="{{ plan.full_range_km|round(0)|int }}" data-sync="range"></div>
-      <div><label>= consumo kWh/100 km</label><input type="number" name="kwh100" min="5" max="60" step="0.1" value="{{ (pp.kwh_100km or veh.kwh_100km)|round(1)|num }}" data-sync="cons"></div>
+      {% set src = (t.plan_params or {}).get('range_source') or veh.range_source %}
+      <input type="hidden" name="range_source" value="{{ src }}" data-sync="source">
+      <div><label data-sync-label="range">{{ '= ' if src == 'consumo' }}autonomia real (km, bateria cheia)</label><input type="number" name="range" min="30" max="2000" step="any" value="{{ plan.full_range_km|numin if src == 'autonomia' else plan.full_range_km|numin(0) }}" data-sync="range" class="{{ 'derived' if src == 'consumo' }}"></div>
+      <div><label data-sync-label="cons">{{ '= ' if src == 'autonomia' }}consumo kWh/100 km</label><input type="number" name="kwh100" min="3" max="100" step="any" value="{{ (pp.kwh_100km or veh.kwh_100km)|numin if src == 'consumo' else (pp.kwh_100km or veh.kwh_100km)|numin(1) }}" data-sync="cons" class="{{ 'derived' if src == 'autonomia' }}"></div>
       <div><label>valor da sua hora (R$)</label><input type="number" name="hv" min="0" step="5" value="{{ pp.hour_value|num }}"></div>
       <div><label>desvio máx. da rota (km)</label><input type="number" name="detour" min="0.5" max="50" step="0.5" value="{{ (pp.detour_km or settings.trip_detour_km)|num }}"></div>
       <div><label>preço presumido sem preço (R$/kWh)</label><input type="number" name="assumed" min="0" step="0.05" value="{{ pp.assumed_price_kwh|num if pp.assumed_price_kwh else '' }}" placeholder="{{ plan.assumed_price_kwh|num }} (90º percentil)"></div>

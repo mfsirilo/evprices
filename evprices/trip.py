@@ -12,6 +12,7 @@ import logging
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, time as dtime, timedelta
+from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -41,16 +42,20 @@ class Vehicle:
     id: int
     name: str
     battery_kwh: float
-    kwh_100km: float           # consumo em estrada; autonomia cheia = battery_kwh / kwh_100km * 100
+    kwh_100km: float           # consumo em estrada (kWh/100 km); autonomia cheia = battery_kwh / kwh_100km * 100
     max_dc_kw: float
     plug_types: list[str]
     soc_min_pct: int
     soc_max_pct: int
     is_default: bool = False
+    range_full_km: float | None = None  # autonomia cheia como gravada (coluna vehicle.range_km)
+    range_source: str = "autonomia"     # qual dos dois o usuário digitou: 'autonomia' | 'consumo'
 
     @property
     def full_range_km(self) -> float:
         """Autonomia com bateria cheia (o número que se informa do carro)."""
+        if self.range_source == "autonomia" and self.range_full_km:
+            return self.range_full_km
         return self.battery_kwh / self.kwh_100km * 100
 
     @property
@@ -66,7 +71,8 @@ def consumption(battery_kwh: float, range_km: float) -> float:
 
 def _vehicle(r: dict[str, Any]) -> Vehicle:
     return Vehicle(r["id"], r["name"], float(r["battery_kwh"]), float(r["kwh_100km"]), float(r["max_dc_kw"]),
-                   list(r["plug_types"] or []), int(r["soc_min_pct"]), int(r["soc_max_pct"]), bool(r["is_default"]))
+                   list(r["plug_types"] or []), int(r["soc_min_pct"]), int(r["soc_max_pct"]), bool(r["is_default"]),
+                   float(r["range_km"]) if r.get("range_km") is not None else None, r.get("range_source") or "autonomia")
 
 
 def vehicles(conn: psycopg.Connection) -> list[Vehicle]:
@@ -81,18 +87,25 @@ def vehicle(conn: psycopg.Connection, vehicle_id: int | None) -> Vehicle | None:
     return _vehicle(r) if r else None
 
 
-def save_vehicle(conn: psycopg.Connection, vehicle_id: int | None, *, name: str, battery_kwh: float, range_km: float,
-                 kwh_100km: float | None, max_dc_kw: float, plug_types: list[str], soc_min_pct: int, soc_max_pct: int,
-                 is_default: bool) -> int:
-    """A autonomia (km com bateria cheia) manda; o consumo é derivado dela — a menos que só o consumo venha."""
+def save_vehicle(conn: psycopg.Connection, vehicle_id: int | None, *, name: str, battery_kwh: Decimal,
+                 range_km: Decimal | None, kwh_100km: Decimal | None, range_source: str, max_dc_kw: Decimal,
+                 plug_types: list[str], soc_min_pct: int, soc_max_pct: int, is_default: bool) -> int:
+    """Autonomia e consumo são a mesma informação; `range_source` diz qual o usuário digitou. Esse é gravado
+    exatamente como veio (Decimal, sem arredondar); o outro é derivado dele e só serve para exibição/cálculo."""
     if not name.strip():
         raise ValueError("nome obrigatório")
-    if range_km > 0:
-        kwh_100km = consumption(battery_kwh, range_km) if battery_kwh > 0 else 0
-    elif kwh_100km and kwh_100km > 0 and battery_kwh > 0:
+    if battery_kwh <= 0 or max_dc_kw <= 0:
+        raise ValueError("bateria e potência DC devem ser positivos")
+    if range_source not in ("autonomia", "consumo"):   # formulário antigo: vale o que veio preenchido
+        range_source = "consumo" if (not range_km and kwh_100km) else "autonomia"
+    if range_source == "autonomia":
+        if not range_km or range_km <= 0:
+            raise ValueError("autonomia deve ser positiva")
+        kwh_100km = battery_kwh / range_km * 100
+    else:
+        if not kwh_100km or kwh_100km <= 0:
+            raise ValueError("consumo deve ser positivo")
         range_km = battery_kwh / kwh_100km * 100
-    if battery_kwh <= 0 or not kwh_100km or kwh_100km <= 0 or max_dc_kw <= 0:
-        raise ValueError("bateria, autonomia e potência DC devem ser positivos")
     if not 0 <= soc_min_pct < soc_max_pct <= 100:
         raise ValueError("reserva deve ser menor que o teto (0–100 %)")
     plugs = [p for p in plug_types if p] or ["CCS 2"]
@@ -100,16 +113,16 @@ def save_vehicle(conn: psycopg.Connection, vehicle_id: int | None, *, name: str,
         conn.execute("UPDATE vehicle SET is_default = false")
     if vehicle_id is None:
         vid = conn.execute(
-            "INSERT INTO vehicle (name, battery_kwh, kwh_100km, range_km, max_dc_kw, plug_types, soc_min_pct, soc_max_pct, "
-            "is_default) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
-            (name.strip(), battery_kwh, kwh_100km, round(range_km), max_dc_kw, plugs, soc_min_pct, soc_max_pct, is_default)
-        ).fetchone()["id"]
+            "INSERT INTO vehicle (name, battery_kwh, kwh_100km, range_km, range_source, max_dc_kw, plug_types, soc_min_pct, "
+            "soc_max_pct, is_default) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (name.strip(), battery_kwh, kwh_100km, range_km, range_source, max_dc_kw, plugs, soc_min_pct, soc_max_pct,
+             is_default)).fetchone()["id"]
     else:
         conn.execute(
-            "UPDATE vehicle SET name = %s, battery_kwh = %s, kwh_100km = %s, range_km = %s, max_dc_kw = %s, plug_types = %s, "
-            "soc_min_pct = %s, soc_max_pct = %s, is_default = %s, updated_at = now() WHERE id = %s",
-            (name.strip(), battery_kwh, kwh_100km, round(range_km), max_dc_kw, plugs, soc_min_pct, soc_max_pct, is_default,
-             vehicle_id))
+            "UPDATE vehicle SET name = %s, battery_kwh = %s, kwh_100km = %s, range_km = %s, range_source = %s, max_dc_kw = %s, "
+            "plug_types = %s, soc_min_pct = %s, soc_max_pct = %s, is_default = %s, updated_at = now() WHERE id = %s",
+            (name.strip(), battery_kwh, kwh_100km, range_km, range_source, max_dc_kw, plugs, soc_min_pct, soc_max_pct,
+             is_default, vehicle_id))
         vid = vehicle_id
     # sempre existe um padrão
     conn.execute("UPDATE vehicle SET is_default = true WHERE id = (SELECT id FROM vehicle ORDER BY is_default DESC, id LIMIT 1) "

@@ -13,10 +13,16 @@
   {% if v %}<input type="hidden" name="id" value="{{ v.id }}">{% endif %}
   <div class="grid3">
     <div><label>nome</label><input type="text" name="name" value="{{ v.name if v else '' }}" placeholder="BYD Dolphin GS" required></div>
-    <div><label>bateria útil (kWh)</label><input type="number" name="battery_kwh" step="0.1" min="1" value="{{ v.battery_kwh|num if v else '' }}" required data-sync="batt"></div>
-    <div><label>autonomia real em estrada (km, bateria cheia)</label><input type="number" name="range_km" step="5" min="50" value="{{ v.full_range_km|round(0)|int if v else '' }}" required data-sync="range"></div>
-    <div><label>= consumo (kWh/100 km)</label><input type="number" name="kwh_100km" step="0.1" min="5" value="{{ v.kwh_100km|round(1)|num if v else '' }}" data-sync="cons"></div>
-    <div><label>potência DC máx. (kW)</label><input type="number" name="max_dc_kw" step="1" min="10" value="{{ v.max_dc_kw|num if v else '' }}" required></div>
+    {# valores medidos, sem domínio discreto: step="any"; min/max só contra erro de digitação #}
+    <div><label>bateria útil (kWh)</label><input type="number" name="battery_kwh" step="any" min="5" max="500" value="{{ v.battery_kwh|numin if v else '' }}" required data-sync="batt"></div>
+    {# autonomia e consumo são a mesma informação: o digitado (range_source) vai como está; o outro é derivado só para exibir #}
+    {% set src = v.range_source if v else 'autonomia' %}
+    <input type="hidden" name="range_source" value="{{ src }}" data-sync="source">
+    <div><label data-sync-label="range">{{ '= ' if src == 'consumo' }}autonomia real em estrada (km, bateria cheia)</label>
+      <input type="number" name="range_km" step="any" min="30" max="2000" value="{{ (v.range_full_km|numin if src == 'autonomia' else v.full_range_km|numin(0)) if v else '' }}" data-sync="range" class="{{ 'derived' if src == 'consumo' }}"></div>
+    <div><label data-sync-label="cons">{{ '= ' if src == 'autonomia' }}consumo (kWh/100 km)</label>
+      <input type="number" name="kwh_100km" step="any" min="3" max="100" value="{{ (v.kwh_100km|numin if src == 'consumo' else v.kwh_100km|numin(1)) if v else '' }}" data-sync="cons" class="{{ 'derived' if src == 'autonomia' }}"></div>
+    <div><label>potência DC máx. (kW)</label><input type="number" name="max_dc_kw" step="any" min="1" max="1000" value="{{ v.max_dc_kw|numin if v else '' }}" required></div>
     <div><label>reserva mínima (%)</label><input type="number" name="soc_min_pct" step="1" min="0" max="99" value="{{ v.soc_min_pct if v else 10 }}"></div>
     <div><label>teto de carga em viagem (%)</label><input type="number" name="soc_max_pct" step="1" min="1" max="100" value="{{ v.soc_max_pct if v else 90 }}"></div>
   </div>

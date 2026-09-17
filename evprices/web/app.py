@@ -4,7 +4,7 @@ from __future__ import annotations
 import mimetypes
 import re
 from datetime import date, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
@@ -41,6 +41,17 @@ def num(v: Any) -> str:
         return "—"
     d = Decimal(repr(v)) if isinstance(v, float) else Decimal(v)   # float pelo repr: 44.9, não 44.8999999…
     return str(d.normalize()).replace(".", ",") if d != d.to_integral() else str(int(d))
+
+
+def numin(v: Any, digits: int | None = None) -> str:
+    """Valor para `<input type=number>`: ponto decimal, sem zeros à direita, sem arredondar (ou com `digits` casas)."""
+    if v is None or v == "":
+        return ""
+    d = Decimal(repr(v)) if isinstance(v, float) else Decimal(v)
+    if digits is not None:
+        d = round(d, digits)
+    d = d.normalize()
+    return format(d, "f") if d != d.to_integral() else str(int(d))
 
 
 def dt(v: Optional[datetime], fmt: str = "%d/%m/%y %H:%M") -> str:
@@ -128,7 +139,7 @@ def pct(v: Any) -> str:
     return "—" if v is None else f"{round(float(v) * 100)}%"
 
 
-templates.env.filters.update(brl=brl, num=num, dt=dt, date=date_, hm=hm, pct=pct, ago=ago)
+templates.env.filters.update(brl=brl, num=num, numin=numin, dt=dt, date=date_, hm=hm, pct=pct, ago=ago)
 templates.env.globals.update(idle_desc=idle_desc, settings=settings, brand_badge=brand_badge, brand_logo=brand_logo)
 
 
@@ -754,8 +765,9 @@ def api_summary(municipio: int, kwh: float | None = None, charge_min: float | No
 def _trip_params(request: Request, v: int | None, soc: int | None, soc_min: int | None, soc_max: int | None,
                  kwh100: float | None, hv: float | None, depart: str | None, detour: float | None, unpriced: int | None,
                  busy: int | None, assumed: float | None, range_km: float | None = None,
-                 veh: trips_.Vehicle | None = None) -> trips_.PlanParams:
-    if range_km and veh:   # autonomia informada na viagem manda sobre o consumo
+                 veh: trips_.Vehicle | None = None, range_source: str | None = None) -> trips_.PlanParams:
+    # autonomia e consumo são a mesma informação: vale o campo que o usuário digitou (range_source); sem a marca, a autonomia
+    if range_km and veh and range_source != "consumo":
         kwh100 = trips_.consumption(veh.battery_kwh, range_km)
     dep = None
     if depart:
@@ -849,11 +861,11 @@ def _saved_trip_params(conn, t: dict[str, Any], v, soc, soc_min, soc_max, kwh100
         except ValueError:
             pass
     return _trip_params(None, v, soc, soc_min, soc_max, kwh100, hv, depart, detour, unpriced, busy, assumed,   # type: ignore[arg-type]
-                        range_km, trips_.vehicle(conn, v)), v
+                        range_km, trips_.vehicle(conn, v), sp.get("range_source")), v
 
 
-_PLAN_FIELDS = {"v": int, "soc": int, "soc_min": int, "soc_max": int, "range": float, "kwh100": float, "hv": float,
-                "detour": float, "assumed": float, "unpriced": int, "busy": int, "depart": str}
+_PLAN_FIELDS = {"v": int, "soc": int, "soc_min": int, "soc_max": int, "range": float, "kwh100": float, "range_source": str,
+                "hv": float, "detour": float, "assumed": float, "unpriced": int, "busy": int, "depart": str}
 
 
 @app.post("/viagens/{trip_id}/parametros")
@@ -881,6 +893,7 @@ async def viagem_parametros(request: Request, trip_id: int):
         if params.get("v") is not None and params.get("v") != before:
             params.pop("range", None)
             params.pop("kwh100", None)
+            params.pop("range_source", None)
         trips_.save_plan_params(conn, trip_id, params)
     return RedirectResponse(f"/viagens/{trip_id}?ok=parâmetros salvos nesta viagem", status_code=303)
 
@@ -973,18 +986,29 @@ def veiculos_page(request: Request, ok: str | None = Query(None), err: str | Non
     return templates.TemplateResponse(request, "veiculos.html", {"vehicles": vs, "plugs": plugs, "ok": ok, "err": err})
 
 
+def _dec(s: str) -> Decimal | None:
+    """Campo numérico do formulário -> Decimal exato (aceita vírgula); vazio -> None."""
+    s = (s or "").strip().replace(",", ".")
+    if not s:
+        return None
+    try:
+        return Decimal(s)
+    except InvalidOperation:
+        raise ValueError(f"número inválido: {s!r}")
+
+
 @app.post("/veiculos")
-def veiculos_save(id: int | None = Form(None), name: str = Form(""), battery_kwh: float = Form(0), range_km: float = Form(0),
-                  kwh_100km: str = Form(""), max_dc_kw: float = Form(0), plug_types: list[str] = Form([]), soc_min_pct: int = Form(10),
-                  soc_max_pct: int = Form(90), is_default: int = Form(0), action: str = Form("save")):
+def veiculos_save(id: int | None = Form(None), name: str = Form(""), battery_kwh: str = Form(""), range_km: str = Form(""),
+                  kwh_100km: str = Form(""), range_source: str = Form(""), max_dc_kw: str = Form(""),
+                  plug_types: list[str] = Form([]), soc_min_pct: int = Form(10), soc_max_pct: int = Form(90),
+                  is_default: int = Form(0), action: str = Form("save")):
     try:
         with db.connect() as conn:
             if action == "delete" and id is not None:
                 trips_.delete_vehicle(conn, id)
                 return RedirectResponse("/veiculos?ok=veículo removido", status_code=303)
-            cons = float(kwh_100km.replace(",", ".")) if kwh_100km.strip() else None
-            trips_.save_vehicle(conn, id, name=name, battery_kwh=battery_kwh, range_km=range_km, kwh_100km=cons,
-                                max_dc_kw=max_dc_kw,
+            trips_.save_vehicle(conn, id, name=name, battery_kwh=_dec(battery_kwh) or Decimal(0), range_km=_dec(range_km),
+                                kwh_100km=_dec(kwh_100km), range_source=range_source, max_dc_kw=_dec(max_dc_kw) or Decimal(0),
                                 plug_types=plug_types, soc_min_pct=soc_min_pct, soc_max_pct=soc_max_pct,
                                 is_default=bool(is_default))
     except ValueError as e:
