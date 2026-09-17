@@ -189,7 +189,7 @@ def reroute(conn: psycopg.Connection, trip_id: int) -> None:
 
 TRIP_SQL = """
 SELECT t.id, t.name, t.origin_municipio_id, t.dest_municipio_id, t.origin_lat, t.origin_lon, t.dest_lat, t.dest_lon,
-       t.distance_m, t.duration_s, t.router, t.routed_at, t.created_at,
+       t.distance_m, t.duration_s, t.router, t.routed_at, t.created_at, t.plan_params,
        mo.nome AS origin_nome, uo.sigla AS origin_uf, md.nome AS dest_nome, ud.sigla AS dest_uf
   FROM trip t
   LEFT JOIN municipio mo ON mo.id = t.origin_municipio_id LEFT JOIN uf uo ON uo.id = mo.uf_id
@@ -203,6 +203,12 @@ def trips(conn: psycopg.Connection) -> list[dict[str, Any]]:
 
 def trip(conn: psycopg.Connection, trip_id: int) -> dict[str, Any] | None:
     return conn.execute(TRIP_SQL + " WHERE t.id = %s", (trip_id,)).fetchone()
+
+
+def save_plan_params(conn: psycopg.Connection, trip_id: int, params: dict[str, Any]) -> None:
+    """Guarda o painel 'ajustar' da viagem (só o que veio preenchido) para reabrir com os mesmos valores."""
+    conn.execute("UPDATE trip SET plan_params = %s WHERE id = %s", (Json(params), trip_id))
+    conn.commit()
 
 
 def delete_trip(conn: psycopg.Connection, trip_id: int) -> None:

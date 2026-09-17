@@ -31,7 +31,7 @@
 {# ---- parâmetros ---- #}
 <details class="card" {% if not plan.ok %}open{% endif %}>
   <summary style="cursor:pointer"><b>{{ veh.name }}</b> <span class="muted">· autonomia <b>{{ plan.full_range_km|round(0)|int }} km</b> (útil {{ plan.useful_range_km|round(0)|int }} km entre {{ pp.soc_min_pct if pp.soc_min_pct is not none else veh.soc_min_pct }} e {{ pp.soc_max_pct if pp.soc_max_pct is not none else veh.soc_max_pct }} %) · saindo com {{ pp.soc_start_pct }}% · hora {{ pp.hour_value|brl }} · <u>ajustar</u></span></summary>
-  <form class="cred" method="get" action="/viagens/{{ t.id }}" style="margin-top:8px">
+  <form class="cred" method="post" action="/viagens/{{ t.id }}/parametros" style="margin-top:8px">
     <div class="grid3">
       <div><label>veículo</label><select name="v">{% for x in vehicles %}<option value="{{ x.id }}" {% if x.id == veh.id %}selected{% endif %}>{{ x.name }}</option>{% endfor %}</select></div>
       <div><label>saída (data/hora)</label><input type="datetime-local" name="depart" value="{{ depart_value }}"></div>
@@ -51,7 +51,7 @@
       <label><input type="checkbox" name="unpriced" value="1" {% if pp.include_unpriced %}checked{% endif %}> usar estações sem preço</label>
       <label><input type="checkbox" name="busy" value="1" {% if pp.include_busy %}checked{% endif %}> usar tomadas ocupadas (espera presumida {{ pp.wait_busy_min|num }} min)</label>
     </div>
-    <div class="actions"><button class="btn" type="submit">Recalcular plano</button></div>
+    <div class="actions"><button class="btn" type="submit">Salvar e recalcular plano</button> <span class="muted">os valores ficam guardados nesta viagem</span></div>
   </form>
 </details>
 

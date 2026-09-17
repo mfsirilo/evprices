@@ -383,3 +383,4 @@ CREATE TABLE IF NOT EXISTS trip (
     created_at         timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS trip_route_gix ON trip USING gist (route);
+ALTER TABLE trip ADD COLUMN IF NOT EXISTS plan_params jsonb;   -- painel 'ajustar' da viagem (veículo, SoC, consumo, hora...)

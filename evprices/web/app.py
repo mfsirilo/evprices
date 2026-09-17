@@ -794,12 +794,63 @@ def viagem_page(request: Request, trip_id: int, v: int | None = Query(None), soc
         t = trips_.trip(conn, trip_id)
         if not t:
             raise HTTPException(404)
-        pp = _trip_params(request, v, soc, soc_min, soc_max, kwh100, hv, depart, detour, unpriced, busy, assumed, range_km,
-                          trips_.vehicle(conn, v))
+        pp, v = _saved_trip_params(conn, t, v, soc, soc_min, soc_max, kwh100, hv, depart, detour, unpriced, busy, assumed,
+                                   range_km)
         data = _trip_page_data(conn, t, pp, v)
     data["ok"] = ok
     data["depart_value"] = (pp.depart or datetime.now(TZ)).strftime("%Y-%m-%dT%H:%M")
     return templates.TemplateResponse(request, "viagem.html", data)
+
+
+def _saved_trip_params(conn, t: dict[str, Any], v, soc, soc_min, soc_max, kwh100, hv, depart, detour, unpriced, busy,
+                       assumed, range_km) -> tuple[trips_.PlanParams, int | None]:
+    """Parâmetros do plano: o que veio na URL manda; o resto sai do painel salvo na viagem (plan_params)."""
+    sp = t["plan_params"] or {}
+    g = lambda val, k: val if val is not None else sp.get(k)   # noqa: E731
+    v, soc, soc_min, soc_max = g(v, "v"), g(soc, "soc"), g(soc_min, "soc_min"), g(soc_max, "soc_max")
+    kwh100, hv, detour, assumed = g(kwh100, "kwh100"), g(hv, "hv"), g(detour, "detour"), g(assumed, "assumed")
+    unpriced, busy, range_km = g(unpriced, "unpriced"), g(busy, "busy"), g(range_km, "range")
+    if depart is None and sp.get("depart"):   # saída salva só vale enquanto estiver no futuro
+        try:
+            if datetime.fromisoformat(sp["depart"]).replace(tzinfo=TZ) > datetime.now(TZ):
+                depart = sp["depart"]
+        except ValueError:
+            pass
+    return _trip_params(None, v, soc, soc_min, soc_max, kwh100, hv, depart, detour, unpriced, busy, assumed,   # type: ignore[arg-type]
+                        range_km, trips_.vehicle(conn, v)), v
+
+
+_PLAN_FIELDS = {"v": int, "soc": int, "soc_min": int, "soc_max": int, "range": float, "kwh100": float, "hv": float,
+                "detour": float, "assumed": float, "unpriced": int, "busy": int, "depart": str}
+
+
+@app.post("/viagens/{trip_id}/parametros")
+async def viagem_parametros(request: Request, trip_id: int):
+    """Painel 'ajustar': grava os parâmetros na viagem e recalcula — ficam salvos para a próxima abertura."""
+    form = await request.form()
+    params: dict[str, Any] = {}
+    for k, typ in _PLAN_FIELDS.items():
+        raw = form.getlist(k)
+        val = str(raw[-1]).strip() if raw else ""   # checkbox: hidden "0" + marcado "1"; o último vence
+        if not val:
+            continue
+        try:
+            params[k] = typ(val.replace(",", ".")) if typ is not str else val
+        except ValueError:
+            continue
+    with db.connect() as conn:
+        t = trips_.trip(conn, trip_id)
+        if not t:
+            raise HTTPException(404)
+        # trocou de veículo: a autonomia/consumo do formulário eram do veículo anterior; volta ao cadastro do novo
+        before = (t["plan_params"] or {}).get("v")
+        if before is None and (dv := trips_.vehicle(conn, None)):
+            before = dv.id            # nada salvo ainda: a página vinha mostrando o veículo padrão
+        if params.get("v") is not None and params.get("v") != before:
+            params.pop("range", None)
+            params.pop("kwh100", None)
+        trips_.save_plan_params(conn, trip_id, params)
+    return RedirectResponse(f"/viagens/{trip_id}?ok=parâmetros salvos nesta viagem", status_code=303)
 
 
 @app.post("/viagens/{trip_id}/corredor")
@@ -837,8 +888,8 @@ def api_trip_plan(trip_id: int, v: int | None = None, soc: int | None = None, so
         t = trips_.trip(conn, trip_id)
         if not t:
             raise HTTPException(404)
-        pp = _trip_params(None, v, soc, soc_min, soc_max, kwh100, hv, depart, detour, unpriced, busy, assumed,   # type: ignore[arg-type]
-                          range_km, trips_.vehicle(conn, v))
+        pp, v = _saved_trip_params(conn, t, v, soc, soc_min, soc_max, kwh100, hv, depart, detour, unpriced, busy, assumed,
+                                   range_km)
         d = _trip_page_data(conn, t, pp, v)
     p = d["plan"]
     return {
