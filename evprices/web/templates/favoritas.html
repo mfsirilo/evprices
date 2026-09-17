@@ -13,6 +13,14 @@
 {% endif %}
 <div class="grid">
 {% set show_municipio = true %}
-{% for s in stations %}{% include "_station_card.html" %}{% endfor %}
+{% for s in stations if s.main %}{% include "_station_card.html" %}{% endfor %}
+</div>
+{% set slow = stations|rejectattr("main")|list %}
+{% if slow %}
+<div class="divider"><span>Gratuitas e lentas</span></div>
+<p class="muted">Abaixo da linha: estações <b>gratuitas</b> e/ou <b>lentas</b> (AC ≤ {{ settings.min_power_kw|num }} kW), fora do ranking. O que importa aqui é se estão online e livres; quando ocupada, a % de carga do carro plugado dá uma ideia da espera.</p>
+<div class="grid">
+{% for s in slow %}{% include "_station_card.html" %}{% endfor %}
+{% endif %}
 </div>
 {% endblock %}

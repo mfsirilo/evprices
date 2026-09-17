@@ -89,7 +89,15 @@
   <div class="muted">Tarifa ANEEL + bandeira + ICMS {{ home.uf }} {{ home.icms_pct|num }}% + PIS/COFINS {% if home.piscofins_source == 'aproximado' %}≈{{ home.piscofins_pct|num }}% (aproximado; a distribuidora não publica em formato legível){% else %}{{ home.piscofins_pct|num }}% (publicado: {{ home.piscofins_source }}){% endif %}.</div>
 </div>
 {% endif %}
-{% for s in stations %}{% include "_station_card.html" %}{% endfor %}
+{% for s in stations if s.main %}{% include "_station_card.html" %}{% endfor %}
+</div>
+{% set slow = stations|rejectattr("main")|list %}
+{% if slow %}
+<div class="divider"><span>Gratuitas e lentas</span></div>
+<p class="muted">Abaixo da linha: estações <b>gratuitas</b> e/ou <b>lentas</b> (AC ≤ {{ settings.min_power_kw|num }} kW), fora do ranking. O que importa aqui é se estão online e livres; quando ocupada, a % de carga do carro plugado dá uma ideia da espera.</p>
+<div class="grid">
+{% for s in slow %}{% include "_station_card.html" %}{% endfor %}
+{% endif %}
 </div>
 {% endif %}
 {% endblock %}

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Iterator
 
@@ -39,10 +40,25 @@ def parse_stations(html: str) -> list[dict[str, Any]]:
     return out
 
 
+HEARTBEAT_MAX_MIN = 30
+
+
+def _online(hb: Any) -> bool | None:
+    """Equipamento online = heartbeat nos últimos HEARTBEAT_MAX_MIN minutos. None sem heartbeat."""
+    if not hb or not isinstance(hb, str):
+        return None
+    try:
+        t = datetime.fromisoformat(hb.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return (datetime.now(timezone.utc) - t) <= timedelta(minutes=HEARTBEAT_MAX_MIN)
+
+
 def normalize(d: dict[str, Any]) -> StationObs:
     power = Decimal(str(d["powerKw"])) if d.get("powerKw") is not None else None
     dc = power is not None and power >= 30
     price = d.get("kwhPrice")
+    online = _online(d.get("lastHeartbeatAt"))
     tariff = TariffObs(
         price_kwh=Decimal(str(price)).quantize(Decimal("0.0001")) if price is not None else None,
         is_free=(Decimal(str(price)) == 0) if price is not None else None,
@@ -59,13 +75,14 @@ def normalize(d: dict[str, Any]) -> StationObs:
         business_hours=d.get("hours"),
         free_parking=None,
         is_private=bool(d.get("isCondominium")),
-        state="Available" if d.get("lastHeartbeatAt") else None,
+        state="Available" if online else ("Offline" if online is False else None),
         connectors=[ConnectorObs(
             external_id="1",
             plug_type="CCS 2" if dc else "Tipo 2",
             current_type="DC" if dc else "AC",
             power_kw=power,
-            state=None,
+            state=None,          # o site não expõe o estado da tomada, só o heartbeat do equipamento
+            online=online,
         )],
         tariff=tariff,
         raw={**d, "_note": "conector inferido pela potência"},

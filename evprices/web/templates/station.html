@@ -40,7 +40,13 @@
 
 {% for c in connectors %}
 <h2>Tomada {{ c.external_id }} — {{ c.plug_type or "?" }} · {{ c.current_type or "" }} {{ c.power_kw|num }} kW
-  <span class="muted state-{{ c.state }}">{{ c.state or "" }}</span></h2>
+  {% if c.power_kw is not none and c.power_kw <= settings.min_power_kw %}<span class="chip">lenta</span>{% endif %}
+  <span class="muted">
+    {% if c.kind == "available" %}<span class="state-Available">livre</span>
+    {% elif c.kind == "busy" %}<span class="state-Charging">em uso{% if c.soc_pct is not none %}: carro a <b>{{ c.soc_pct }}%</b>{% endif %}{% if c.charging_since %} (desde {{ c.charging_since|dt("%H:%M") }}, {{ c.charging_since|ago }}){% endif %}</span>
+    {% elif c.kind == "down" %}<span class="state-Unavailable">{{ "offline" if c.online is false else "fora do ar" }}</span>
+    {% else %}estado ?{% endif %}
+    · <span title="última coleta">{{ c.last_seen_at|ago }}</span></span></h2>
 <div class="card tbl">
 <table>
   <tr><th>Vigência</th><th class="r">R$/kWh</th><th class="r">Ativação</th><th>Ociosidade</th></tr>
@@ -50,7 +56,7 @@
         <div class="muted">confirmado {{ t.last_confirmed_at|date }}</div>
         {% if t.windows %}<div class="muted">{% for w in t.windows %}{{ w.start_time }}–{{ w.end_time }}: {{ w.price_kwh|brl }}{% if w.is_default %}*{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
         {% if t.notes %}<div class="muted">{{ t.notes }}</div>{% endif %}</td>
-    <td class="r"><b>{% if t.price_kwh is not none %}{{ t.price_kwh|brl }}{% elif t.price_min %}{{ t.price_min|brl(3) }}/min{% else %}—{% endif %}</b></td>
+    <td class="r"><b>{% if t.is_free and not t.price_kwh %}<span class="state-Available">grátis</span>{% elif t.price_kwh is not none %}{{ t.price_kwh|brl }}{% elif t.price_min %}{{ t.price_min|brl(3) }}/min{% else %}—{% endif %}</b></td>
     <td class="r">{% if t.flat_fee and t.flat_fee > 0 %}{{ t.flat_fee|brl }}{% if t.flat_fee_waived_above_kwh %}<div class="muted">isenta ≥ {{ t.flat_fee_waived_above_kwh|num }} kWh</div>{% endif %}{% else %}—{% endif %}</td>
     <td>{{ idle_desc(t.idle_fee, t.idle_period_min, t.idle_grace_min) }}</td>
   </tr>

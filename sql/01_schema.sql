@@ -184,6 +184,10 @@ CREATE TABLE IF NOT EXISTS connector (
 );
 
 -- Uma linha por "versão" de tarifa. valid_to IS NULL = vigente.
+ALTER TABLE connector ADD COLUMN IF NOT EXISTS soc_pct smallint;            -- % de carga do carro plugado (Tupi/On-Charge)
+ALTER TABLE connector ADD COLUMN IF NOT EXISTS charging_since timestamptz;  -- início da sessão em curso (Tupi)
+ALTER TABLE connector ADD COLUMN IF NOT EXISTS online boolean;              -- NULL = fonte não informa (Turbo: heartbeat)
+
 CREATE TABLE IF NOT EXISTS tariff (
     id                        bigserial PRIMARY KEY,
     connector_id              int NOT NULL REFERENCES connector (id) ON DELETE CASCADE,
@@ -205,6 +209,8 @@ CREATE TABLE IF NOT EXISTS tariff (
     raw                       jsonb
 );
 
+ALTER TABLE tariff ADD COLUMN IF NOT EXISTS is_free boolean;   -- true = recarga gratuita; NULL = fonte não informa preço
+UPDATE tariff SET is_free = true WHERE is_free IS NULL AND (price_kwh = 0 OR notes ILIKE '%gratuit%' OR notes ILIKE '%sem cobrança%');
 CREATE UNIQUE INDEX IF NOT EXISTS tariff_one_current ON tariff (connector_id) WHERE valid_to IS NULL;
 CREATE INDEX IF NOT EXISTS tariff_connector_from ON tariff (connector_id, valid_from DESC);
 
@@ -324,7 +330,12 @@ SELECT
     c.current_type,
     c.power_kw,
     c.state,
+    c.soc_pct,
+    c.charging_since,
+    c.online,
+    c.last_seen_at  AS connector_last_seen_at,
     t.id            AS tariff_id,
+    t.is_free,
     t.price_kwh,
     t.price_min,
     t.flat_fee,

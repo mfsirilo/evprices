@@ -22,7 +22,7 @@ from .. import operators
 from ..config import settings
 from ..geo import Municipio
 from ..http import cached, get_json
-from ..models import ConnectorObs, StationObs, TariffObs, TariffWindow
+from ..models import ConnectorObs, StationObs, TariffObs, TariffWindow, norm_state
 
 log = logging.getLogger(__name__)
 
@@ -179,10 +179,12 @@ def normalize_app(cp: dict[str, Any], pricing: dict[str, Any] | None) -> Station
         tariff = dynamic_tariff(details, cp) if details else fixed_tariff(cp, c)
         if c.get("dynamicPricingUuid") and not details:
             tariff.notes = (tariff.notes or "") + "; tomada tem preço dinâmico ainda não sincronizado"
+        ls = c.get("lastStatus") or {}
+        soc = ls.get("socPercentage") if norm_state(ls.get("status")) == "busy" else None
         connectors.append(ConnectorObs(
             external_id=str(c.get("connectorId") or c.get("connectorPk")), plug_type=plug, current_type=current,
-            power_kw=power,
-            state=(c.get("lastStatus") or {}).get("status"), tariff=tariff,
+            power_kw=power, state=ls.get("status"), tariff=tariff,
+            soc_pct=int(soc) if isinstance(soc, (int, float)) else None,
         ))
     if cp.get("isOpen_24Hours"):
         hours = "24h"

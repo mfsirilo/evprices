@@ -19,7 +19,7 @@ import httpx
 import psycopg
 from psycopg.types.json import Json
 
-from . import routing
+from . import models, routing
 from .config import settings
 
 log = logging.getLogger(__name__)
@@ -257,19 +257,7 @@ def request_corridor_collection(conn: psycopg.Connection, trip_id: int, km: floa
     return n
 
 
-def norm_state(s: str | None) -> str:
-    """Estados vêm em vários dialetos (Available/AVAILABLE/Disponível, Em uso/Charging…) -> available|busy|down|unknown."""
-    v = (s or "").strip().lower()
-    if not v:
-        return "unknown"
-    if v in ("available", "disponível", "disponivel"):
-        return "available"
-    if v in ("charging", "em uso", "em utilização", "em utilizacao", "preparing", "finishing", "busy", "occupied", "ocupado"):
-        return "busy"
-    if v in ("unavailable", "faulted", "maintenance", "em manutenção", "em manutencao", "offline", "não vinculada",
-             "nao vinculada", "aguardando conexão ocpp", "aguardando conexao ocpp", "out of order", "indisponível"):
-        return "down"
-    return "unknown"
+norm_state = models.norm_state   # (estado normalizado: available|busy|down|unknown)
 
 
 def candidates(conn: psycopg.Connection, trip_id: int, veh: Vehicle, detour_km: float | None = None) -> list[dict[str, Any]]:
@@ -284,11 +272,11 @@ def candidates(conn: psycopg.Connection, trip_id: int, veh: Vehicle, detour_km: 
                     WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL
                       AND ST_DWithin(ST_SetSRID(ST_MakePoint(s.lon, s.lat), 4326), t.route, %(deg)s))
         SELECT s.id AS station_id, s.name, s.brand, so.slug AS source, s.address, s.state AS station_state,
-               s.last_seen_at, s.lat, s.lon, s.municipio_id, m.nome AS municipio, u.sigla AS uf,
+               s.last_seen_at, s.lat, s.lon, s.municipio_id, m.nome AS municipio, u.sigla AS uf, c.online, c.soc_pct,
                ST_Distance(s.pt::geography, t.route::geography) AS detour_m,
                ST_Length(ST_LineSubstring(t.route, 0, ST_LineLocatePoint(t.route, s.pt))::geography) AS along_m,
                c.id AS connector_id, c.plug_type, c.current_type, c.power_kw, c.state,
-               tf.id AS tariff_id, tf.price_kwh, tf.price_min, tf.flat_fee, tf.flat_fee_waived_above_kwh,
+               tf.id AS tariff_id, tf.is_free, tf.price_kwh, tf.price_min, tf.flat_fee, tf.flat_fee_waived_above_kwh,
                tf.idle_fee, tf.idle_period_min, tf.idle_grace_min, tf.notes, tf.fingerprint,
                (SELECT json_agg(json_build_object('s', w.start_time::text, 'e', w.end_time::text, 'p', w.price_kwh, 'd', w.is_default)
                                 ORDER BY w.is_default, w.start_time) FROM tariff_window w WHERE w.tariff_id = tf.id) AS windows
@@ -318,7 +306,9 @@ def candidates(conn: psycopg.Connection, trip_id: int, veh: Vehicle, detour_km: 
         if opt is None:
             opt = st["options"][key] = {
                 "connector_id": r["connector_id"], "plug_type": r["plug_type"], "current_type": r["current_type"],
-                "power_kw": float(r["power_kw"]), "price_kwh": _f(r["price_kwh"]), "price_min": _f(r["price_min"]),
+                "power_kw": float(r["power_kw"]),
+                "price_kwh": 0.0 if (r["is_free"] and r["price_kwh"] is None) else _f(r["price_kwh"]),   # gratuita = R$ 0
+                "price_min": _f(r["price_min"]), "is_free": bool(r["is_free"]),
                 "flat_fee": _f(r["flat_fee"]) or 0.0, "flat_fee_waived_above_kwh": _f(r["flat_fee_waived_above_kwh"]),
                 "idle_fee": _f(r["idle_fee"]) or 0.0, "idle_period_min": r["idle_period_min"],
                 "idle_grace_min": r["idle_grace_min"] or 0, "notes": r["notes"],
@@ -326,7 +316,7 @@ def candidates(conn: psycopg.Connection, trip_id: int, veh: Vehicle, detour_km: 
                 "count": 0, "available": 0, "busy": 0, "down": 0, "unknown": 0,
             }
         opt["count"] += 1
-        opt[norm_state(r["state"])] += 1
+        opt["down" if r["online"] is False else norm_state(r["state"])] += 1
     out = []
     for st in stations.values():
         opts = list(st["options"].values())

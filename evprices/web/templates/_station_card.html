@@ -15,7 +15,8 @@
   <div class="opt">
     <div>
       <div class="plug">{{ o.plug_type or "?" }} · {{ o.current_type or "" }} {{ o.power_kw|num }} kW{% if o.count > 1 %} ×{{ o.count }}{% endif %}
-        <span class="muted state-{{ o.state }}">{{ o.state or "" }}</span></div>
+        {% if not o.main %}{% if o.is_free %}<span class="chip">gratuita</span>{% endif %}{% if o.power_kw is none or o.power_kw <= settings.min_power_kw %}<span class="chip">lenta</span>{% endif %}{% endif %}</div>
+      <div>{% include "_states.html" %}</div>
       <div class="fees">
         {% if o.flat_fee and o.flat_fee > 0 %}<span class="fee-bad">ativação {{ o.flat_fee|brl }}{% if o.flat_fee_waived_above_kwh %} (isenta ≥ {{ o.flat_fee_waived_above_kwh|num }} kWh){% endif %}</span> · {% endif %}
         {{ idle_desc(o.idle_fee, o.idle_period_min, o.idle_grace_min) }}
@@ -25,12 +26,12 @@
       </div>
     </div>
     <div>
-      <div class="price">{% if o.price_kwh_used is not none %}{{ o.price_kwh_used|brl }}<small>/kWh</small>{% elif o.price_min %}{{ o.price_min|brl(3) }}<small>/min</small>{% else %}—{% endif %}</div>
-      <div class="total">{% if o.total is not none %}total <b>{{ o.total|brl }}</b>{% else %}preço desconhecido{% endif %}</div>
+      <div class="price">{% if o.is_free and not o.price_kwh_used %}<span class="state-Available">grátis</span>{% elif o.price_kwh_used is not none %}{{ o.price_kwh_used|brl }}<small>/kWh</small>{% elif o.price_min %}{{ o.price_min|brl(3) }}<small>/min</small>{% else %}—{% endif %}</div>
+      <div class="total">{% if o.is_free and not o.total %}sem cobrança{% elif o.total is not none %}total <b>{{ o.total|brl }}</b>{% else %}preço desconhecido{% endif %}</div>
     </div>
   </div>
   {% endfor %}
-  <div class="muted" style="margin-top:6px">desde {{ s.options[0].valid_from|date }} · visto {{ s.last_seen_at|date }}</div>
+  <div class="muted" style="margin-top:6px">{% if s.options[0].valid_from %}desde {{ s.options[0].valid_from|date }} · {% endif %}visto {{ s.last_seen_at|dt }}</div>
   {% set op = (ops or {}).get(s.source) %}
   {% if op %}{% set sid = s.station_id %}{% set priced = s.priced %}{% set alt = s.alt %}{% include "_operator_link.html" %}{% endif %}
 </div>

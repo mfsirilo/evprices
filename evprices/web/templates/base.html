@@ -134,6 +134,11 @@
                     background: var(--card); color: var(--fg); }
   form.cred .actions { display: flex; gap: 8px; align-items: center; }
   .ok-msg { color: var(--good); font-size: 14px; }
+  .divider { display: flex; align-items: center; gap: 12px; margin: 22px 0 8px; color: var(--muted); font-size: 13px;
+             text-transform: uppercase; letter-spacing: .06em; }
+  .divider::before, .divider::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+  .states { font-size: 12px; }
+  .plug .chip { margin-left: 4px; vertical-align: 1px; }
   /* viagens */
   .grid3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
   form.cred select { width: 100%; font-size: 16px; padding: 9px; border: 1px solid var(--line); border-radius: 10px;

@@ -21,9 +21,9 @@ class Settings:
     database_url: str = field(default_factory=lambda: _env("DATABASE_URL"))
     tz: str = field(default_factory=lambda: _env("TZ", "America/Sao_Paulo"))
 
-    # Só entram no banco conectores com potência > MIN_POWER_KW (estrito: AC 22 kW fica de fora)
+    # Seção principal (ranking) = tomadas com potência > MIN_POWER_KW (estrito: AC 22 kW é "lenta") e, com PAID_ONLY,
+    # não sabidamente gratuitas. Todas entram no banco; as outras aparecem abaixo da linha "gratuitas e lentas".
     min_power_kw: float = field(default_factory=lambda: float(_env("MIN_POWER_KW", "22")))
-    # Descarta estação cuja tarifa é sabidamente gratuita. Preço desconhecido (On-Charge) continua entrando.
     paid_only: bool = field(default_factory=lambda: _bool("PAID_ONLY", True))
     # Malha IBGE: minima (3,6 MB) | intermediaria (12 MB) | maxima
     ibge_mesh_quality: str = field(default_factory=lambda: _env("IBGE_MESH_QUALITY", "intermediaria"))

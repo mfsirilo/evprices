@@ -11,6 +11,7 @@ import json
 import logging
 import re
 import time
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Iterator, Optional
 from urllib.parse import urlencode
@@ -19,7 +20,7 @@ import httpx
 
 from ..config import settings
 from ..geo import Municipio
-from ..models import ConnectorObs, StationObs, TariffObs, TariffWindow
+from ..models import ConnectorObs, StationObs, TariffObs, TariffWindow, norm_state
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +50,16 @@ def _iso_minutes(s: Any) -> Optional[int]:
     h, mi, sec = (int(g) if g else 0 for g in m.groups())
     total = h * 60 + mi + (1 if sec and sec > 0 else 0)
     return total or None
+
+
+def _iso_dt(s: Any) -> Optional[datetime]:
+    """'2026-09-17T16:37:08.532Z' -> datetime (UTC); None se vazio/inválido."""
+    if not s or not isinstance(s, str):
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def _hhmm(s: Any) -> Optional[str]:
@@ -161,6 +172,8 @@ def normalize_station(d: dict[str, Any]) -> StationObs:
     connectors = []
     for p in d.get("connectedPlugs") or []:
         power = p.get("power")
+        # a API deixa o último "percentage" mesmo com a tomada livre: só vale durante a carga
+        soc = (p.get("meterValues") or {}).get("percentage") if norm_state(p.get("stateName")) == "busy" else None
         connectors.append(
             ConnectorObs(
                 external_id=str(p.get("connectorID") or p.get("_id")),
@@ -168,6 +181,8 @@ def normalize_station(d: dict[str, Any]) -> StationObs:
                 current_type=p.get("current") or d.get("current"),
                 power_kw=Decimal(str(power)) if power not in (None, "") else None,
                 state=p.get("stateName"),
+                soc_pct=int(soc) if isinstance(soc, (int, float)) else None,
+                charging_since=_iso_dt(p.get("startChargingOn")),
             )
         )
     raw = {k: v for k, v in d.items() if k not in ("connectedPlugs", "images", "users_charging_queue")}

@@ -15,6 +15,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .. import db, home_tariff, operators, timerange, trip as trips_
+from ..store import is_main
+from ..models import norm_state
 from ..config import settings
 from ..municipios import slug as busca_slug
 
@@ -108,11 +110,25 @@ def hm(minutes: Any) -> str:
     return f"{m // 60}h{m % 60:02d}" if m >= 60 else f"{m} min"
 
 
+def ago(v: Optional[datetime]) -> str:
+    """'há 25 min' / 'há 2h10' / 'há 3 d'."""
+    if not v:
+        return ""
+    m = int((datetime.now(v.tzinfo) - v).total_seconds() // 60)
+    if m < 1:
+        return "agora"
+    if m < 60:
+        return f"há {m} min"
+    if m < 48 * 60:
+        return f"há {m // 60}h{m % 60:02d}"
+    return f"há {m // 1440} d"
+
+
 def pct(v: Any) -> str:
     return "—" if v is None else f"{round(float(v) * 100)}%"
 
 
-templates.env.filters.update(brl=brl, num=num, dt=dt, date=date_, hm=hm, pct=pct)
+templates.env.filters.update(brl=brl, num=num, dt=dt, date=date_, hm=hm, pct=pct, ago=ago)
 templates.env.globals.update(idle_desc=idle_desc, settings=settings, brand_badge=brand_badge, brand_logo=brand_logo)
 
 
@@ -151,7 +167,7 @@ PRICES_SQL = """
 SELECT cp.*, e.price_kwh_used, e.energy_cost, e.time_cost, e.idle_cost, e.flat_cost, e.total
 FROM current_prices cp
 LEFT JOIN LATERAL estimate_session_cost(cp.connector_id, %(kwh)s::numeric, %(charge_min)s::numeric, %(idle_min)s::numeric, now()) e ON true
-WHERE cp.municipio_id = %(municipio)s AND cp.power_kw > %(min_kw)s
+WHERE cp.municipio_id = %(municipio)s
 ORDER BY e.total NULLS LAST, cp.price_kwh NULLS LAST, cp.station, cp.connector_no
 """
 
@@ -181,8 +197,8 @@ def _prices_params(sc: dict[str, float], municipio_id: int) -> dict[str, Any]:
     return {**sc, "municipio": municipio_id, "min_kw": settings.min_power_kw}
 
 
-FAV_PRICES_SQL = PRICES_SQL.replace("WHERE cp.municipio_id = %(municipio)s AND",
-                                    "WHERE cp.station_id IN (SELECT station_id FROM favorite) AND")
+FAV_PRICES_SQL = PRICES_SQL.replace("WHERE cp.municipio_id = %(municipio)s",
+                                    "WHERE cp.station_id IN (SELECT station_id FROM favorite)")
 
 
 def _favorites(conn) -> set[int]:
@@ -191,7 +207,9 @@ def _favorites(conn) -> set[int]:
 
 def _grouped_prices(sc: dict[str, float], municipio_id: int | None, favorites_only: bool = False) -> list[dict[str, Any]]:
     """Agrupa conectores iguais (mesmo plug/potência/tarifa) dentro da estação; ordena estação pelo menor total.
-    municipio_id=None + favorites_only => favoritas de todos os municípios."""
+    municipio_id=None + favorites_only => favoritas de todos os municípios.
+    Cada opção leva `main` (paga e > MIN_POWER_KW) e `states` (estado, SoC e início por tomada); a estação leva
+    `main` = tem alguma opção principal — as outras vão para a seção "gratuitas e lentas"."""
     with db.connect() as conn:
         favs = _favorites(conn)
         if municipio_id is None:
@@ -217,9 +235,16 @@ def _grouped_prices(sc: dict[str, float], municipio_id: int | None, favorites_on
         if opt is None:
             opt = dict(r)
             opt["count"] = 0
+            opt["main"] = is_main(r["power_kw"], r["is_free"])
+            opt["states"] = []
+            opt["available"] = opt["busy"] = opt["down"] = opt["unknown"] = 0
             st["options"][key] = opt
         opt["count"] += 1
-        if r["total"] is not None and (st["best_total"] is None or r["total"] < st["best_total"]):
+        ns = "down" if r["online"] is False else norm_state(r["state"])
+        opt[ns] += 1
+        opt["states"].append({"state": r["state"], "kind": ns, "soc_pct": r["soc_pct"], "charging_since": r["charging_since"],
+                              "online": r["online"], "seen_at": r["connector_last_seen_at"]})
+        if opt["main"] and r["total"] is not None and (st["best_total"] is None or r["total"] < st["best_total"]):
             st["best_total"] = r["total"]
     out = list(stations.values())
     unpriced = [st for st in out if st["source"] in operators.PLATFORMS
@@ -233,11 +258,17 @@ def _grouped_prices(sc: dict[str, float], municipio_id: int | None, favorites_on
                 st["alt"] = alts[0] if alts else None
     for st in out:
         st["priced"] = any(o["price_kwh"] is not None or o["price_min"] for o in st["options"].values())
+        st["main"] = any(o["main"] for o in st["options"].values())
         st["options"] = sorted(
             st["options"].values(),
-            key=lambda o: (o["total"] is None, o["total"] or 0, -(o["power_kw"] or 0)),
+            key=lambda o: (not o["main"], o["total"] is None, o["total"] or 0, -(o["power_kw"] or 0)),
         )
-    out.sort(key=lambda s: (s["best_total"] is None, s["best_total"] or 0, s["station"]))
+        # seção "gratuitas e lentas": o que importa é dar para usar agora
+        st["available"] = sum(o["available"] for o in st["options"])
+        st["busy"] = sum(o["busy"] for o in st["options"])
+        st["down"] = sum(o["down"] for o in st["options"])
+    out.sort(key=lambda s: (not s["main"], s["best_total"] is None, s["best_total"] or 0,
+                            -s["available"], -s["busy"], s["station"]))
     return out
 
 
@@ -457,6 +488,7 @@ def station_page(request: Request, station_id: int, from_: str | None = Query(No
             "SELECT * FROM connector WHERE station_id = %s ORDER BY external_id", (station_id,)
         ).fetchall()
         for c in connectors:
+            c["kind"] = "down" if c["online"] is False else norm_state(c["state"])
             c["tariffs"] = conn.execute(
                 """
                 SELECT t.*,

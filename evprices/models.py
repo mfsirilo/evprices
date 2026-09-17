@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -39,6 +40,9 @@ class ConnectorObs:
     power_kw: Optional[Decimal]
     state: Optional[str]
     tariff: Optional[TariffObs] = None   # tarifa própria da tomada; None => vale a da estação
+    soc_pct: Optional[int] = None        # % de carga do carro plugado (quando a fonte informa)
+    charging_since: Optional[datetime] = None
+    online: Optional[bool] = None        # None = a fonte não informa
 
 
 @dataclass
@@ -56,3 +60,18 @@ class StationObs:
     connectors: list[ConnectorObs]
     tariff: Optional[TariffObs]   # tarifa da estação, aplicada a cada conector sem tarifa própria
     raw: dict[str, Any]
+
+
+def norm_state(s: str | None) -> str:
+    """Estados vêm em vários dialetos (Available/AVAILABLE/Disponível, Em uso/Charging…) -> available|busy|down|unknown."""
+    v = (s or "").strip().lower()
+    if not v:
+        return "unknown"
+    if v in ("available", "disponível", "disponivel"):
+        return "available"
+    if v in ("charging", "em uso", "em utilização", "em utilizacao", "preparing", "finishing", "busy", "occupied", "ocupado"):
+        return "busy"
+    if v in ("unavailable", "faulted", "maintenance", "em manutenção", "em manutencao", "offline", "não vinculada",
+             "nao vinculada", "aguardando conexão ocpp", "aguardando conexao ocpp", "out of order", "indisponível"):
+        return "down"
+    return "unknown"

@@ -1,0 +1,7 @@
+{# Estado das tomadas de uma opção agrupada (`o` de _grouped_prices): livres, em uso com SoC do carro, fora do ar. #}
+<span class="muted states">
+  {%- if o.available %}<span class="state-Available">{{ o.available }} livre{{ "s" if o.available > 1 }}</span>{% endif -%}
+  {%- for x in o.states if x.kind == "busy" %}{% if not loop.first or o.available %} · {% endif %}<span class="state-Charging">em uso{% if x.soc_pct is not none %}: carro a <b>{{ x.soc_pct }}%</b>{% endif %}{% if x.charging_since %} <span title="início da sessão">({{ x.charging_since|ago }})</span>{% endif %}</span>{% endfor -%}
+  {%- if o.down %}{% if o.available or o.busy %} · {% endif %}<span class="state-Unavailable">{{ o.down }} {% if o.states|selectattr("online", "false")|list %}offline{% else %}fora do ar{% endif %}</span>{% endif -%}
+  {%- if o.unknown and not (o.available or o.busy or o.down) %}<span title="a fonte não informa o estado da tomada">estado ?</span>{% endif -%}
+</span>

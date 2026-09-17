@@ -1,6 +1,6 @@
 # evprices — monitor pessoal de preços de recarga de VE
 
-Lista de preços e **histórico por tomada** dos carregadores **pagos, acima de 22 kW**, dentro do território
+Lista de preços e **histórico por tomada** dos carregadores dentro do território
 do **município que você escolher** (digite o nome — ou "nome/UF" — e escolha na lista; ou GPS do aparelho). Uso estritamente pessoal.
 Sem mapa, sem redistribuição.
 
@@ -21,8 +21,13 @@ Sem mapa, sem redistribuição.
     horário; `kind=community` = ponto cadastrado pela comunidade (preço declarado pelo dono, anotado na tarifa).
   - **Bow Energy** (API do web app `bow.app.br`): rede pequena no ES, com `tariff_per_kwh_brl`.
   - A Shell **não** tem outra fonte pública: o mapa global `ui-map.shellrecharge.com` não cobre o Brasil.
-- **Filtro** (`.env`): só tomadas com `power_kw > MIN_POWER_KW` (22 → AC 22 kW fica de fora) e, com
-  `PAID_ONLY=true`, estações sabidamente gratuitas são descartadas.
+- **Filtro** (`.env`): **todas** as tomadas entram no banco; `MIN_POWER_KW` (22 → AC 22 kW fica de fora) e `PAID_ONLY`
+  definem a **seção principal** (ranking por custo). As demais — **gratuitas e/ou lentas** — aparecem abaixo de uma
+  linha divisória, ordenadas por "dá para usar agora": livres primeiro, depois ocupadas, depois fora do ar.
+- **Estado por tomada**: livre / em uso / fora do ar (offline), e, quando a fonte informa, a **% de carga do carro
+  plugado** e há quanto tempo está carregando — Tupi (`meterValues.percentage`, `startChargingOn`) e On-Charge
+  (`lastStatus.socPercentage`); Turbo Station só tem heartbeat (online/offline). Aparece em todo card (pago ou não)
+  e na página da estação; é o estado da **última coleta**, não tempo real.
 - **Coleta**: ao escolher um município na UI ele vira *monitorado* e ganha um pedido de coleta; o container
   `collector` (único que escreve no banco) atende em até `COLLECT_POLL_S` segundos e recoleta cada município
   monitorado a cada `COLLECT_INTERVAL_HOURS`. `/municipios` lista e permite parar de monitorar (histórico fica).

@@ -73,14 +73,16 @@ def upsert_connector(conn: psycopg.Connection, station_id: int, c, now: datetime
     row = conn.execute(
         """
         INSERT INTO connector (station_id, external_id, plug_type, current_type, power_kw, state,
-                               first_seen_at, last_seen_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                               soc_pct, charging_since, online, first_seen_at, last_seen_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (station_id, external_id) DO UPDATE SET
             plug_type = EXCLUDED.plug_type, current_type = EXCLUDED.current_type,
-            power_kw = EXCLUDED.power_kw, state = EXCLUDED.state, last_seen_at = EXCLUDED.last_seen_at
+            power_kw = EXCLUDED.power_kw, state = EXCLUDED.state, soc_pct = EXCLUDED.soc_pct,
+            charging_since = EXCLUDED.charging_since, online = EXCLUDED.online, last_seen_at = EXCLUDED.last_seen_at
         RETURNING id
         """,
-        (station_id, c.external_id, c.plug_type, c.current_type, c.power_kw, c.state, now, now),
+        (station_id, c.external_id, c.plug_type, c.current_type, c.power_kw, c.state, c.soc_pct, c.charging_since,
+         c.online, now, now),
     ).fetchone()
     return row["id"]
 
@@ -100,8 +102,8 @@ def apply_tariff(conn: psycopg.Connection, connector_id: int, src_id: int, t: Ta
 
     if cur and cur["fingerprint"] == fp:
         conn.execute(
-            "UPDATE tariff SET last_confirmed_at = %s, raw = %s WHERE id = %s",
-            (now, Jsonb(t.raw), cur["id"]),
+            "UPDATE tariff SET last_confirmed_at = %s, raw = %s, is_free = %s WHERE id = %s",
+            (now, Jsonb(t.raw), t.is_free, cur["id"]),
         )
         return "same", None
 
@@ -112,13 +114,13 @@ def apply_tariff(conn: psycopg.Connection, connector_id: int, src_id: int, t: Ta
         """
         INSERT INTO tariff (connector_id, source_id, currency, price_kwh, price_min, flat_fee,
                             flat_fee_waived_above_kwh, idle_fee, idle_period_min, idle_grace_min,
-                            free_parking, notes, fingerprint, valid_from, last_confirmed_at, raw)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            free_parking, notes, fingerprint, valid_from, last_confirmed_at, raw, is_free)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
         """,
         (connector_id, src_id, t.currency, t.price_kwh, t.price_min, t.flat_fee,
          t.flat_fee_waived_above_kwh, t.idle_fee, t.idle_period_min, t.idle_grace_min,
-         t.free_parking, t.notes, fp, now, now, Jsonb(t.raw)),
+         t.free_parking, t.notes, fp, now, now, Jsonb(t.raw), t.is_free),
     ).fetchone()
     for w in t.windows:
         conn.execute(
@@ -134,17 +136,17 @@ def tariff_of(s: StationObs, c: ConnectorObs) -> TariffObs | None:
     return c.tariff if c.tariff is not None else s.tariff
 
 
+def is_main(power_kw, is_free) -> bool:
+    """Tomada da seção principal (ranking): potência > MIN_POWER_KW e, com PAID_ONLY, não sabidamente gratuita.
+    As outras (lentas e/ou gratuitas) também entram no banco e aparecem abaixo da linha, com estado e SoC."""
+    if settings.paid_only and is_free:
+        return False
+    return power_kw is not None and power_kw > settings.min_power_kw
+
+
 def wanted(s: StationObs) -> list:
-    """Conectores da estação que interessam: potência > MIN_POWER_KW e recarga não sabidamente gratuita.
-    Lista vazia = estação descartada."""
-    out = []
-    for c in s.connectors:
-        t = tariff_of(s, c)
-        if settings.paid_only and t is not None and t.is_free:
-            continue
-        if c.power_kw is not None and c.power_kw > settings.min_power_kw:
-            out.append(c)
-    return out
+    """Todas as tomadas da estação entram no banco (a classificação principal/lenta-gratuita é da UI)."""
+    return list(s.connectors)
 
 
 def run_collection(conn: psycopg.Connection, slug: str, mun: Municipio, stations
