@@ -1,0 +1,4 @@
+{# Avatar da marca: logo (static/brands) ou iniciais coloridas. Espera `brand`; opcional `size` (px, padrão 40). #}
+{% set bb = brand_badge(brand) %}{% set lg = brand_logo(brand) %}{% set size = size or 40 %}
+{% if lg %}<img class="rounded-lg bg-white object-contain p-1 shrink-0" style="width:{{ size }}px;height:{{ size }}px" src="{{ lg }}" alt="{{ brand or 'tupi' }}" title="{{ brand or 'tupi' }}" loading="lazy">
+{% else %}<span class="rounded-lg flex items-center justify-center font-display font-bold shrink-0" style="width:{{ size }}px;height:{{ size }}px;font-size:{{ (size * 0.28)|int }}px;background:{{ bb[1] }};color:{{ bb[2] }}" title="{{ brand }}">{{ bb[0] }}</span>{% endif %}

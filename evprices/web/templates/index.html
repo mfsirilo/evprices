@@ -1,29 +1,52 @@
 {% extends "base.html" %}
-{% block title %}evprices — {% if mun %}{{ mun.nome }}/{{ mun.uf }}{% else %}preços{% endif %}{% endblock %}
+{% block page_title %}{% if mun %}{{ mun.nome }}/{{ mun.uf }}{% else %}Preços{% endif %}{% endblock %}
 {% block content %}
 {% if not mun %}
+<section class="card flex flex-col gap-space-sm">
+  <div class="flex items-center gap-2">
+    <span class="material-symbols-outlined text-primary">location_city</span>
+    <h1 class="font-display text-headline-lg-mobile text-on-surface">Escolha o município</h1>
+  </div>
+  <p class="font-body-sm text-body-sm text-on-surface-variant">Digite o nome (ou "nome/UF") para levantar os carregadores e seus preços.</p>
   {% include "_picker.html" %}
+</section>
 {% else %}
-<div class="card">
-  <div class="munbar">
-    <div class="grow"><div class="name">{{ mun.nome }}/{{ mun.uf }}</div>
-      <div class="muted" id="mun-status" data-id="{{ mun.id }}" data-collecting="{{ 1 if (mun.collecting_since or mun.collect_requested_at) else 0 }}">
-        {% if mun.collecting_since or mun.collect_requested_at %}<span class="spin"></span> coletando… a página atualiza sozinha
-        {% elif mun.last_collected_at %}coletado {{ mun.last_collected_at|dt }} · {{ mun.stations }} estação(ões){% if mun.last_error %} · <span class="fee-bad">{{ mun.last_error }}</span>{% endif %}
-        {% else %}ainda não coletado{% endif %}
-        {% if not mun.monitored %} · <span class="fee-bad">não monitorado</span>{% endif %}
-      </div></div>
-    <button class="btn ghost small" type="button" onclick="document.getElementById('picker-wrap').hidden=false;this.hidden=true">trocar</button>
-    <a class="btn ghost small" href="/evolucao?m={{ mun.id }}">📈 evolução</a>
-    <button class="btn small" type="button" id="recollect" {% if mun.collecting_since or mun.collect_requested_at %}disabled{% endif %}>coletar agora</button>
+{% set collecting = mun.collecting_since or mun.collect_requested_at %}
+<!-- 1. barra do município -->
+<section class="card flex flex-col gap-2.5">
+  <div class="flex items-start justify-between gap-2">
+    <div class="flex flex-col min-w-0">
+      <span class="font-label-sm text-label-sm uppercase tracking-wider text-outline">Município</span>
+      <h1 class="font-display text-headline-lg-mobile text-on-surface font-bold truncate">{{ mun.nome }}/{{ mun.uf }}</h1>
+    </div>
+    {% if not mun.monitored %}<span class="pill-warn">não monitorado</span>{% endif %}
+  </div>
+  <div class="flex items-center gap-1.5 font-body-sm text-body-sm text-on-surface-variant" id="mun-status" data-id="{{ mun.id }}" data-collecting="{{ 1 if collecting else 0 }}">
+    {% if collecting %}<span class="spin text-primary"></span><span class="text-primary">coletando… a página atualiza sozinha</span>
+    {% elif mun.last_collected_at %}<span class="material-symbols-outlined text-[16px] text-outline">sync</span><span>coletado {{ mun.last_collected_at|dt }}</span><span class="text-outline-variant">·</span><span class="text-on-surface font-medium">{{ mun.stations }} estação(ões)</span>
+    {% else %}<span class="material-symbols-outlined text-[16px] text-outline">schedule</span><span>ainda não coletado</span>{% endif %}
+  </div>
+  {% if mun.last_error %}<div class="flex items-start gap-1.5 rounded-lg bg-error-container/20 px-2.5 py-1.5 font-body-sm text-body-sm text-error"><span class="material-symbols-outlined text-[16px]">error</span>{{ mun.last_error }}</div>{% endif %}
+  <div class="grid grid-cols-12 gap-2">
+    <button class="btn-ghost col-span-3 h-10 px-1" type="button" data-open="sheet-picker"><span class="material-symbols-outlined text-[16px] text-outline">swap_horiz</span>Trocar</button>
+    <a class="btn-ghost col-span-4 h-10 px-1" href="/evolucao?m={{ mun.id }}"><span class="material-symbols-outlined text-[16px] text-tertiary">trending_up</span>Evolução</a>
+    <button class="btn-primary col-span-5 h-10 px-1" type="button" id="recollect" {% if collecting %}disabled{% endif %}><span class="material-symbols-outlined text-[17px] {% if collecting %}animate-spin{% endif %}">autorenew</span>{% if collecting %}Coletando…{% else %}Coletar agora{% endif %}</button>
+  </div>
+</section>
+<div class="sheet" id="sheet-picker" hidden>
+  <div class="panel">
+    <div class="flex items-center justify-between">
+      <span class="font-display text-headline-md text-on-surface flex items-center gap-2"><span class="material-symbols-outlined text-primary">location_city</span>Trocar município</span>
+      <button type="button" class="w-9 h-9 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface-variant" data-close aria-label="fechar"><span class="material-symbols-outlined text-[20px]">close</span></button>
+    </div>
+    {% include "_picker.html" %}
   </div>
 </div>
-<div id="picker-wrap" hidden>{% include "_picker.html" %}</div>
 <script>
 (function () {
   const st = document.getElementById('mun-status'), id = st.dataset.id;
   document.getElementById('recollect').addEventListener('click', async e => {
-    e.target.disabled = true; await fetch('/api/municipio/' + id + '/select', {method: 'POST'}); location.reload();
+    e.currentTarget.disabled = true; await fetch('/api/municipio/' + id + '/select', {method: 'POST'}); location.reload();
   });
   if (st.dataset.collecting === '1') {
     const t = setInterval(async () => {
@@ -34,70 +57,65 @@
 })();
 </script>
 
-<form class="scenario" method="get" action="/">
-  <input type="hidden" name="m" value="{{ mun.id }}">
-  <div><label>kWh</label><input type="number" name="kwh" inputmode="decimal" step="0.5" min="0" value="{{ sc.kwh|num }}"></div>
-  <div><label>min carga</label><input type="number" name="charge_min" inputmode="numeric" step="1" min="0" value="{{ sc.charge_min|num }}"></div>
-  <div><label>min ocioso</label><input type="number" name="idle_min" inputmode="numeric" step="1" min="0" value="{{ sc.idle_min|num }}"></div>
-  <button type="submit">OK</button>
-</form>
+<!-- 2. cenário -->
+<div class="mt-3">{% with action = "/" %}{% include "_scenario.html" %}{% endwith %}</div>
 
+{% if not stations %}
+<div class="card mt-3 flex flex-col items-center text-center gap-2 py-8">
+  <span class="material-symbols-outlined text-[40px] text-outline">{% if collecting %}hourglass_top{% elif fav %}star{% else %}ev_station{% endif %}</span>
+  <div class="font-display text-headline-md text-on-surface">{% if fav %}Nenhuma favorita em {{ mun.nome }}/{{ mun.uf }}{% elif collecting %}Aguardando a coleta…{% elif mun.last_collected_at %}Nenhum carregador encontrado{% else %}Nenhuma estação ainda{% endif %}</div>
+  <div class="font-body-sm text-body-sm text-on-surface-variant">{% if fav %}Toque na estrela de uma estação para marcá-la.{% elif collecting %}A primeira coleta leva de segundos a ~1 min.{% elif mun.last_collected_at %}As fontes consultadas não têm carregador em {{ mun.nome }}/{{ mun.uf }}.{% else %}Toque em "Coletar agora".{% endif %}</div>
+</div>
+{% endif %}
+
+<div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
 {% if home %}
+<!-- 3. em casa -->
+<section class="card relative overflow-hidden flex flex-col gap-2.5" id="home-card" data-conv="{{ home.convencional.price_kwh }}" data-branca="{{ home.branca.price_kwh if home.branca else '' }}">
+  <div class="absolute left-0 top-0 bottom-0 w-1 bg-secondary"></div>
+  <div class="flex items-start gap-2.5">
+    <div class="w-10 h-10 rounded-lg bg-secondary-container/20 flex items-center justify-center text-secondary shrink-0"><span class="material-symbols-outlined text-[22px]">home</span></div>
+    <div class="min-w-0">
+      <div class="flex items-center gap-1.5"><h2 class="font-display text-headline-md text-on-surface font-bold">Em casa</h2><span class="pill-ok !py-0">referência</span></div>
+      <p class="font-body-sm text-body-sm text-on-surface-variant">{{ home.distribuidora }}{% if home.convencional.bandeira %} · bandeira {{ home.convencional.bandeira|lower }}{% endif %}</p>
+    </div>
+  </div>
+  <div class="rounded-lg bg-surface-container-lowest/70 p-2.5 flex flex-col gap-1">
+    <div class="flex items-baseline justify-between"><span class="font-body-sm text-body-sm text-on-surface-variant">Recarga de <span id="home-kwh">{{ sc.kwh|num }}</span> kWh em casa</span><span class="font-display text-headline-md font-bold text-secondary tabular-nums" id="home-total">{{ (home.convencional.price_kwh * sc.kwh)|brl }}</span></div>
+    <div class="flex items-center justify-between font-body-sm text-body-sm text-outline"><span>com ~10 % de perda do carregador de parede</span><span class="text-on-surface-variant font-medium tabular-nums" id="home-loss">{{ (home.convencional.price_kwh * sc.kwh * 1.1)|brl }}</span></div>
+    {% if home.branca %}<div class="flex items-center justify-between font-body-sm text-body-sm text-outline"><span>branca fora de ponta</span><span class="text-on-surface-variant font-medium tabular-nums" id="home-branca-total">{{ (home.branca.price_kwh * sc.kwh)|brl }}</span></div>{% endif %}
+    <div class="flex items-center justify-between font-body-sm text-body-sm text-outline"><span>vs. melhor eletroposto</span><span class="text-on-surface font-medium tabular-nums">{% if stations and stations[0].best_total is not none %}{{ stations[0].best_total|brl }}{% else %}—{% endif %}</span></div>
+  </div>
+  <div class="font-body-sm text-body-sm text-on-surface-variant"><span class="text-on-surface font-medium">{{ home.convencional.price_kwh|brl }}/kWh</span> convencional{% if home.branca %} · branca fora ponta <span class="text-on-surface font-medium">{{ home.branca.price_kwh|brl }}</span>{% endif %}</div>
+  <div class="text-[11px] leading-[14px] text-outline">Tarifa B1 ANEEL + bandeira + ICMS {{ home.uf }} {{ home.icms_pct|num }} % + PIS/COFINS {% if home.piscofins_source == 'aproximado' %}≈{{ home.piscofins_pct|num }} % (aproximado; a distribuidora não publica em formato legível){% else %}{{ home.piscofins_pct|num }} % (publicado: {{ home.piscofins_source }}){% endif %}.</div>
+</section>
 <script>
 // o total de casa acompanha o campo kWh enquanto você digita, antes de enviar o cenário
 (function () {
-  const card = document.getElementById('home-card'), inp = document.querySelector('form.scenario input[name=kwh]');
+  const card = document.getElementById('home-card'), inp = document.querySelector('#sheet-scenario input[name=kwh]'), out = document.getElementById('sc-kwh-out');
   if (!card || !inp) return;
   const conv = parseFloat(card.dataset.conv), branca = parseFloat(card.dataset.branca);
   const brl = v => v.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  inp.addEventListener('input', () => {
-    const k = parseFloat(inp.value.replace(',', '.')); if (!(k >= 0)) return;
+  const apply = () => {
+    const raw = inp.disabled && out ? out.textContent.replace(/\./g, '') : inp.value; const k = parseFloat(raw.replace(',', '.')); if (!(k >= 0)) return;
     set('home-kwh', k.toLocaleString('pt-BR')); set('home-total', brl(conv * k)); set('home-loss', brl(conv * k * 1.1));
     if (!isNaN(branca)) set('home-branca-total', brl(branca * k));
-  });
+  };
+  inp.addEventListener('input', apply); ['soc_from', 'soc_to'].forEach(n => { const e = document.querySelector('#sheet-scenario [name=' + n + ']'); if (e) e.addEventListener('input', apply); });
 })();
 </script>
 {% endif %}
-<p class="muted" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-  <span class="grow">Ranking pelo custo total do cenário ({{ sc.kwh|num }} kWh, {{ sc.charge_min|num }} min carregando, {{ sc.idle_min|num }} min ocioso).
-  Só tomadas acima de {{ settings.min_power_kw|num }} kW.</span>
-  <a class="btn ghost small{% if fav %} active{% endif %}" href="/?m={{ mun.id }}&kwh={{ sc.kwh|num }}&charge_min={{ sc.charge_min|num }}&idle_min={{ sc.idle_min|num }}&fav={{ 0 if fav else 1 }}">★ {% if fav %}todas{% else %}só favoritas{% endif %}</a>
-</p>
-
-{% if not stations %}
-<div class="card">{% if fav %}Nenhuma favorita em {{ mun.nome }}/{{ mun.uf }} ainda — toque na ★ de uma estação.{% elif mun.collecting_since or mun.collect_requested_at %}Aguardando a coleta…{% elif mun.last_collected_at %}Nenhum carregador pago acima de {{ settings.min_power_kw|num }} kW encontrado em {{ mun.nome }}/{{ mun.uf }} nas fontes consultadas.{% else %}Nenhuma estação ainda.{% endif %}</div>
-{% endif %}
-
-<div class="grid">
-{% if home %}
-<div class="card stcard" id="home-card" data-conv="{{ home.convencional.price_kwh }}" data-branca="{{ home.branca.price_kwh if home.branca else '' }}">
-  <div class="row brandline"><span class="logo" style="background:var(--chip);font-size:16px">🏠</span>
-    <div class="grow"><div class="name">Em casa</div><div class="muted">{{ home.distribuidora }}{% if home.convencional.bandeira %} · bandeira {{ home.convencional.bandeira|lower }}{% endif %}</div></div>
-    <div style="text-align:right;white-space:nowrap"><b>{{ home.convencional.price_kwh|brl }}</b><span class="muted">/kWh</span>
-      {% if home.branca %}<div class="muted">branca fora ponta {{ home.branca.price_kwh|brl }}</div>{% endif %}</div></div>
-  <div class="opt" style="margin-top:6px">
-    <div>
-      <div class="plug">Recarga de <span id="home-kwh">{{ sc.kwh|num }}</span> kWh em casa</div>
-      <div class="fees">com ~10% de perda do carregador de parede: <span id="home-loss">{{ (home.convencional.price_kwh * sc.kwh * 1.1)|brl }}</span>{% if home.branca %} · branca fora ponta <span id="home-branca-total">{{ (home.branca.price_kwh * sc.kwh)|brl }}</span>{% endif %}</div>
-    </div>
-    <div>
-      <div class="price" id="home-total">{{ (home.convencional.price_kwh * sc.kwh)|brl }}</div>
-      <div class="total">vs. melhor eletroposto {% if stations and stations[0].best_total is not none %}<b>{{ stations[0].best_total|brl }}</b>{% else %}—{% endif %}</div>
-    </div>
-  </div>
-  <div class="muted">Tarifa ANEEL + bandeira + ICMS {{ home.uf }} {{ home.icms_pct|num }}% + PIS/COFINS {% if home.piscofins_source == 'aproximado' %}≈{{ home.piscofins_pct|num }}% (aproximado; a distribuidora não publica em formato legível){% else %}{{ home.piscofins_pct|num }}% (publicado: {{ home.piscofins_source }}){% endif %}.</div>
-</div>
-{% endif %}
 {% for s in stations if s.main %}{% include "_station_card.html" %}{% endfor %}
 </div>
+
 {% set slow = stations|rejectattr("main")|list %}
 {% if slow %}
-<div class="divider"><span>Gratuitas e lentas</span></div>
-<p class="muted">Abaixo da linha: estações <b>gratuitas</b> e/ou <b>lentas</b> (AC ≤ {{ settings.min_power_kw|num }} kW), fora do ranking. O que importa aqui é se estão online e livres; quando ocupada, a % de carga do carro plugado dá uma ideia da espera.</p>
-<div class="grid">
-{% for s in slow %}{% include "_station_card.html" %}{% endfor %}
+<section class="mt-6 flex flex-col gap-2">
+  <div class="divider"><span>Gratuitas e lentas</span></div>
+  <p class="font-body-sm text-body-sm text-on-surface-variant text-center px-4">Estações gratuitas e/ou lentas (AC ≤ {{ settings.min_power_kw|num }} kW), fora do ranking, ordenadas por "dá para usar agora". Quando ocupada, a % de carga do carro plugado dá uma ideia da espera.</p>
+  <div class="grid grid-cols-1 gap-3 md:grid-cols-2 mt-1">{% for s in slow %}{% include "_station_card.html" %}{% endfor %}</div>
+</section>
 {% endif %}
-</div>
 {% endif %}
 {% endblock %}

@@ -1,125 +1,202 @@
 {% extends "base.html" %}
-{% block title %}{{ t.name }} — viagem{% endblock %}
+{% block page_title %}{{ t.name }}{% endblock %}
 {% block content %}
-<div class="card">
-  <div class="row"><div class="grow"><div class="name" style="white-space:normal">{{ t.name }}</div>
-    <div class="muted">{{ (t.distance_m / 1000)|round(0)|int }} km · {{ (t.duration_s / 60)|hm }} de estrada · rota (OSRM) de {{ t.routed_at|dt }}</div></div></div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-    <a class="btn small" href="{{ maps }}" target="_blank" rel="noopener">🧭 Google Maps{% if plan.stops %} com as paradas{% endif %}</a>
-    <form method="post" action="/viagens/{{ t.id }}/rota" style="display:inline"><button class="btn ghost small" type="submit">recalcular rota</button></form>
-    <form method="post" action="/viagens/{{ t.id }}/excluir" style="display:inline" onsubmit="return confirm('Excluir esta viagem?')"><button class="btn ghost small" type="submit">excluir</button></form>
-    <a class="btn ghost small" href="/viagens" data-back>← voltar</a>
+{% set src = (t.plan_params or {}).get('range_source') or veh.range_source %}
+{% set smin = pp.soc_min_pct if pp.soc_min_pct is not none else veh.soc_min_pct %}
+{% set smax = pp.soc_max_pct if pp.soc_max_pct is not none else veh.soc_max_pct %}
+<a class="inline-flex items-center gap-1 text-primary font-label-md text-label-md mb-2" href="/viagens" data-back><span class="material-symbols-outlined text-[18px]">arrow_back</span>Viagens</a>
+<div class="mb-3">
+  <h1 class="font-display text-headline-lg-mobile text-on-surface tracking-tight">{{ t.name }}</h1>
+  <div class="flex flex-wrap items-center gap-x-2 gap-y-1 font-body-sm text-body-sm text-on-surface-variant mt-1">
+    <span class="font-display text-telemetry-metric text-on-surface tabular-nums">{{ (t.distance_m / 1000)|round(0)|int }} km</span><span class="text-outline">•</span>
+    <span>{{ (t.duration_s / 60)|hm }} de estrada</span><span class="text-outline">•</span>
+    <span class="pill-muted !font-medium"><span class="material-symbols-outlined text-[14px]">alt_route</span>rota (OSRM) de {{ t.routed_at|dt }}</span>
   </div>
 </div>
-{% if ok %}<div class="card ok-msg">✔ {{ ok }}</div>{% endif %}
+{% if ok %}<div class="card-low mb-3 flex items-start gap-2 text-secondary"><span class="material-symbols-outlined text-[20px]">check_circle</span><span class="font-body-sm text-body-sm">{{ ok }}</span></div>{% endif %}
 
-{# ---- cobertura do corredor ---- #}
-<div class="card" id="cov" data-collecting="{{ 1 if cov.collecting else 0 }}">
-  <div class="row"><div class="grow"><b>Corredor</b> <span class="muted">municípios a até {{ settings.trip_corridor_km|num }} km da rota</span></div>
-    <span class="chip">{{ cov.collected }}/{{ cov.total }} coletados</span></div>
-  <div class="muted" style="margin:6px 0">
-    {% for m in cor %}<span class="chip" style="text-transform:none;margin:2px 2px 2px 0;{% if m.collecting_since or m.collect_requested_at %}color:var(--accent){% elif not m.last_collected_at %}color:var(--warn){% endif %}" title="{% if m.last_collected_at %}coletado {{ m.last_collected_at|dt }}{% else %}nunca coletado{% endif %}">{{ m.nome }} · {{ m.stations }}</span>{% endfor %}
+<div class="flex flex-col gap-2 mb-3">
+  <a class="btn-primary w-full h-12" href="{{ maps }}" target="_blank" rel="noopener"><span class="material-symbols-outlined text-[20px]">explore</span>Abrir no Google Maps{% if plan.stops %} com as paradas{% endif %}</a>
+  <div class="grid grid-cols-2 gap-2">
+    <form method="post" action="/viagens/{{ t.id }}/rota"><button class="btn-ghost w-full h-10" type="submit"><span class="material-symbols-outlined text-[18px] text-primary">sync</span>Recalcular rota</button></form>
+    <form method="post" action="/viagens/{{ t.id }}/excluir" onsubmit="return confirm('Excluir esta viagem?')"><button class="btn-danger w-full h-10" type="submit"><span class="material-symbols-outlined text-[18px]">delete</span>Excluir</button></form>
   </div>
-  {% if cov.collecting %}<div class="muted"><span class="spin"></span> coletando {{ cov.collecting }} município(s)… a página atualiza sozinha</div>
+</div>
+
+{# ---- corredor ---- #}
+<section class="card-low flex flex-col gap-space-sm mb-3" id="cov" data-collecting="{{ 1 if cov.collecting else 0 }}">
+  <div class="flex items-center justify-between gap-2">
+    <div class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[18px] text-primary">hub</span><span class="font-label-md text-label-md text-on-surface">Corredor da rota (até {{ settings.trip_corridor_km|num }} km)</span></div>
+    <span class="pill-muted">{{ cov.collected }}/{{ cov.total }} coletados</span>
+  </div>
+  <div class="flex flex-wrap gap-1.5">
+    {% for m in cor %}
+    <span class="pill {% if m.collecting_since or m.collect_requested_at %}bg-surface-container-high text-primary{% elif not m.last_collected_at %}bg-tertiary-container/25 text-tertiary{% else %}bg-surface-container-high text-on-surface-variant{% endif %} !font-medium" title="{% if m.last_collected_at %}coletado {{ m.last_collected_at|dt }}{% else %}nunca coletado{% endif %}">
+      {% if m.collecting_since or m.collect_requested_at %}<span class="spin !w-3 !h-3"></span>{% else %}<span class="dot {% if m.last_collected_at %}bg-secondary{% else %}bg-tertiary{% endif %}"></span>{% endif %}{{ m.nome }} · {{ m.stations }}</span>
+    {% endfor %}
+  </div>
+  {% if cov.collecting %}<div class="flex items-center gap-2 font-body-sm text-body-sm text-primary"><span class="spin"></span>coletando {{ cov.collecting }} município(s)… a página atualiza sozinha</div>
   {% elif cov.pending %}
-  <form method="post" action="/viagens/{{ t.id }}/corredor" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-    <button class="btn small" type="submit">coletar os {{ cov.pending }} município(s) que faltam</button>
-    <span class="muted">passa a monitorá-los (recoleta a cada {{ settings.collect_interval_hours|num }} h)</span></form>
-  {% else %}<div class="muted">corredor inteiro coletado — estações que não aparecem aqui não existem nas fontes ou não passam no filtro (&gt; {{ settings.min_power_kw|num }} kW, pago).</div>{% endif %}
-</div>
+  <form method="post" action="/viagens/{{ t.id }}/corredor" class="flex flex-col gap-1">
+    <button class="btn-ghost w-full h-10 text-primary" type="submit"><span class="material-symbols-outlined text-[16px]">cloud_sync</span>Coletar os {{ cov.pending }} município(s) que faltam</button>
+    <span class="font-body-sm text-body-sm text-outline text-center">passam a ser monitorados (recoleta a cada {{ settings.collect_interval_hours|num }} h)</span></form>
+  {% else %}<div class="font-body-sm text-body-sm text-outline">corredor inteiro coletado — estações que não aparecem aqui não existem nas fontes ou não passam no filtro (&gt; {{ settings.min_power_kw|num }} kW, pago).</div>{% endif %}
+</section>
 
-{# ---- parâmetros ---- #}
-<details class="card" {% if not plan.ok %}open{% endif %}>
-  <summary style="cursor:pointer"><b>{{ veh.name }}</b> <span class="muted">· autonomia <b>{{ plan.full_range_km|round(0)|int }} km</b> (útil {{ plan.useful_range_km|round(0)|int }} km entre {{ pp.soc_min_pct if pp.soc_min_pct is not none else veh.soc_min_pct }} e {{ pp.soc_max_pct if pp.soc_max_pct is not none else veh.soc_max_pct }} %) · saindo com {{ pp.soc_start_pct }}% · hora {{ pp.hour_value|brl }} · <u>ajustar</u></span></summary>
-  <form class="cred" method="post" action="/viagens/{{ t.id }}/parametros" style="margin-top:8px">
-    <div class="grid3">
-      <div><label>veículo</label><select name="v">{% for x in vehicles %}<option value="{{ x.id }}" {% if x.id == veh.id %}selected{% endif %}>{{ x.name }}</option>{% endfor %}</select></div>
-      <div><label>saída (data/hora)</label><input type="datetime-local" name="depart" value="{{ depart_value }}"></div>
-      <div><label>SoC na saída %</label><input type="number" name="soc" min="0" max="100" step="1" value="{{ pp.soc_start_pct }}"></div>
-      <div><label>reserva mínima %</label><input type="number" name="soc_min" min="0" max="100" step="1" value="{{ pp.soc_min_pct if pp.soc_min_pct is not none else veh.soc_min_pct }}"></div>
-      <div><label>teto de carga %</label><input type="number" name="soc_max" min="0" max="100" step="1" value="{{ pp.soc_max_pct if pp.soc_max_pct is not none else veh.soc_max_pct }}"></div>
-      <input type="hidden" data-sync="batt" value="{{ veh.battery_kwh }}">
-      {% set src = (t.plan_params or {}).get('range_source') or veh.range_source %}
-      <input type="hidden" name="range_source" value="{{ src }}" data-sync="source">
-      <div><label data-sync-label="range">{{ '= ' if src == 'consumo' }}autonomia real (km, bateria cheia)</label><input type="number" name="range" min="30" max="2000" step="any" value="{{ plan.full_range_km|numin if src == 'autonomia' else plan.full_range_km|numin(0) }}" data-sync="range" class="{{ 'derived' if src == 'consumo' }}"></div>
-      <div><label data-sync-label="cons">{{ '= ' if src == 'autonomia' }}consumo kWh/100 km</label><input type="number" name="kwh100" min="3" max="100" step="any" value="{{ (pp.kwh_100km or veh.kwh_100km)|numin if src == 'consumo' else (pp.kwh_100km or veh.kwh_100km)|numin(1) }}" data-sync="cons" class="{{ 'derived' if src == 'autonomia' }}"></div>
-      <div><label>valor da sua hora (R$)</label><input type="number" name="hv" min="0" step="5" value="{{ pp.hour_value|num }}"></div>
-      <div><label>desvio máx. da rota (km)</label><input type="number" name="detour" min="0.5" max="50" step="0.5" value="{{ (pp.detour_km or settings.trip_detour_km)|num }}"></div>
-      <div><label>preço presumido sem preço (R$/kWh)</label><input type="number" name="assumed" min="0" step="0.05" value="{{ pp.assumed_price_kwh|num if pp.assumed_price_kwh else '' }}" placeholder="{{ plan.assumed_price_kwh|num }} (90º percentil)"></div>
-    </div>
-    <div style="display:flex;gap:16px;flex-wrap:wrap">
-      {# o hidden vem ANTES: com a caixa marcada chegam "0,1" e o último valor vence #}
-      <input type="hidden" name="unpriced" value="0"><input type="hidden" name="busy" value="0">
-      <label><input type="checkbox" name="unpriced" value="1" {% if pp.include_unpriced %}checked{% endif %}> usar estações sem preço</label>
-      <label><input type="checkbox" name="busy" value="1" {% if pp.include_busy %}checked{% endif %}> usar tomadas ocupadas (espera presumida {{ pp.wait_busy_min|num }} min)</label>
-    </div>
-    <div class="actions"><button class="btn" type="submit">Salvar e recalcular plano</button> <span class="muted">os valores ficam guardados nesta viagem</span></div>
-  </form>
-</details>
-
-{# ---- plano ---- #}
+{# ---- resumo do plano ---- #}
 {% if plan.ok %}
-<div class="card">
-  <div class="row"><div class="grow"><div class="name">Plano: {{ plan.stops|length }} parada(s)</div>
-    <div class="muted">{{ plan.kwh_billed|round(1)|num }} kWh · {{ plan.charge_min|hm }} carregando{% if plan.wait_min %} · {{ plan.wait_min|hm }} de espera{% endif %}{% if plan.detour_min %} · {{ plan.detour_min|hm }} de desvio ({{ plan.extra_km|round(1)|num }} km){% endif %}</div>
-    <div class="muted">chegada {{ plan.arrive_at|dt("%d/%m %H:%M") }} com {{ plan.arrive_soc|pct }} · tempo total {{ plan.total_min|hm }} ({{ plan.drive_min|hm }} de estrada)</div></div>
-    <div><div class="price">{{ plan.money|brl }}</div><div class="total">{{ (plan.money / (t.distance_m / 1000) * 100)|brl }}/100 km</div></div></div>
-</div>
+<section class="card flex flex-col gap-space-sm mb-3">
+  <div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary text-[20px]">electric_car</span><h2 class="font-display text-headline-md text-on-surface">Plano: {{ plan.stops|length }} parada(s)</h2></div>
+  <div class="grid grid-cols-2 gap-2">
+    <div class="rounded-lg bg-surface-container-high p-2.5 flex flex-col"><span class="font-label-sm text-label-sm text-on-surface-variant">Energia cobrada</span><span class="font-display text-telemetry-metric text-on-surface tabular-nums">{{ plan.kwh_billed|round(1)|num }} kWh</span></div>
+    <div class="rounded-lg bg-surface-container-high p-2.5 flex flex-col"><span class="font-label-sm text-label-sm text-on-surface-variant">Carregando</span><span class="font-display text-telemetry-metric text-on-surface tabular-nums">{{ plan.charge_min|hm }}</span></div>
+    <div class="rounded-lg bg-surface-container-high p-2.5 flex flex-col"><span class="font-label-sm text-label-sm text-on-surface-variant">Espera presumida</span><span class="font-display text-telemetry-metric tabular-nums {% if plan.wait_min %}text-tertiary{% else %}text-on-surface{% endif %}">{{ plan.wait_min|hm if plan.wait_min else "—" }}</span></div>
+    <div class="rounded-lg bg-surface-container-high p-2.5 flex flex-col"><span class="font-label-sm text-label-sm text-on-surface-variant">Desvios</span><span class="font-display text-telemetry-metric text-on-surface tabular-nums">{% if plan.detour_min %}{{ plan.detour_min|hm }} ({{ plan.extra_km|round(1)|num }} km){% else %}—{% endif %}</span></div>
+  </div>
+  <div class="rounded-lg bg-surface-container-low p-2.5 flex flex-col gap-0.5">
+    <div class="flex items-center justify-between font-label-md text-label-md"><span class="text-on-surface">Chegada {{ plan.arrive_at|dt("%d/%m às %H:%M") }}</span><span class="text-secondary font-bold">{{ plan.arrive_soc|pct }} de bateria</span></div>
+    <span class="font-body-sm text-body-sm text-on-surface-variant">tempo total {{ plan.total_min|hm }} ({{ plan.drive_min|hm }} de estrada)</span>
+  </div>
+  <div class="rounded-xl bg-surface-container-highest p-space-md flex items-center justify-between">
+    <div class="flex flex-col"><span class="font-label-sm text-label-sm text-on-surface-variant">Custo estimado</span><span class="font-display text-price-display-mobile text-primary tabular-nums">{{ plan.money|brl }}</span></div>
+    <div class="flex flex-col items-end"><span class="font-label-sm text-label-sm text-on-surface-variant">por 100 km</span><span class="font-display text-telemetry-metric text-on-surface tabular-nums">{{ (plan.money / (t.distance_m / 1000) * 100)|brl }}</span></div>
+  </div>
+</section>
 
-<div class="timeline">
-  <div class="tl-node"><span class="tl-dot"></span><b>{{ t.origin_nome }}/{{ t.origin_uf }}</b> <span class="muted">km 0 · {{ pp.soc_start_pct }}%{% if pp.depart %} · {{ pp.depart|dt("%H:%M") }}{% endif %}</span></div>
-  {% for s in plan.stops %}{% set st = s.station %}{% set o = s.option %}{% set bb = brand_badge(st.brand) %}{% set lg = brand_logo(st.brand) %}
-  <div class="card stcard tl-stop">
-    <a class="cover" href="/station/{{ st.station_id }}" aria-label="{{ st.name }}"></a>
-    <div class="row brandline">
-      {% if lg %}<img class="logo" src="{{ lg }}" alt="{{ st.brand or 'tupi' }}">{% else %}<span class="logo" style="background:{{ bb[1] }};color:{{ bb[2] }}">{{ bb[0] }}</span>{% endif %}
-      <div class="grow"><div class="name">{{ loop.index }}. {{ st.name }}</div>
-        <div class="muted">km {{ s.km|round(0)|int }} · {{ st.municipio }}/{{ st.uf }}{% if s.detour_km >= 0.5 %} · desvio {{ s.detour_km|round(1)|num }} km (~{{ s.detour_min|hm }}){% endif %} · chega ~{{ s.arrive_at|dt("%H:%M") }}</div></div>
-    </div>
-    <div class="opt">
-      <div>
-        <div class="plug">{{ o.plug_type }} · {{ o.current_type or "" }} {{ o.power_kw|num }} kW{% if o.count > 1 %} ×{{ o.count }}{% endif %}
-          <span class="muted">{% if o.available %}<span class="state-Available">{{ o.available }} livre(s)</span>{% endif %}{% if o.busy %} <span class="state-Charging">{{ o.busy }} em uso</span>{% endif %}{% if o.down %} <span class="state-Unavailable">{{ o.down }} fora</span>{% endif %}{% if o.unknown %} <span title="a fonte não informa estado">estado ?</span>{% endif %}</span></div>
-        <div class="fees"><b>{{ s.arrive_soc|pct }} → {{ s.leave_soc|pct }}</b> · {{ s.kwh_billed|round(1)|num }} kWh · {{ s.charge_min|hm }}{% if s.wait_min %} + {{ s.wait_min|hm }} de espera{% endif %}
-          {% if s.flat %} · <span class="fee-bad">ativação {{ s.flat|brl }}</span>{% endif %}{% if o.notes %} · {{ o.notes }}{% endif %}</div>
+{# ---- linha do tempo ---- #}
+<div class="flex items-center justify-between px-1 mb-2"><span class="font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">Itinerário</span><span class="font-label-sm text-label-sm text-primary">{{ plan.stops|length }} parada(s)</span></div>
+<div class="timeline flex flex-col mb-3">
+  <div class="relative flex items-start gap-space-md pb-space-lg">
+    <div class="relative z-10 w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-[16px] text-on-primary">trip_origin</span></div>
+    <div class="flex flex-col min-w-0 pt-0.5"><span class="font-label-sm text-label-sm text-primary uppercase">Partida</span><span class="font-display text-headline-md text-on-surface truncate">{{ t.origin_nome }}/{{ t.origin_uf }}</span>
+      <span class="font-body-sm text-body-sm text-on-surface-variant">km 0 · {% if pp.depart %}{{ pp.depart|dt("%H:%M") }} · {% endif %}<b class="text-on-surface">{{ pp.soc_start_pct }} % de bateria</b></span></div>
+  </div>
+  {% for s in plan.stops %}{% set st = s.station %}{% set o = s.option %}
+  <div class="relative flex items-start gap-space-md pb-space-lg">
+    <div class="relative z-10 w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center shrink-0"><span class="font-label-md text-label-md text-primary font-bold">{{ loop.index }}</span></div>
+    <article class="card relative flex-1 min-w-0 flex flex-col gap-space-sm">
+      <a class="absolute inset-0 rounded-xl" href="/station/{{ st.station_id }}" aria-label="{{ st.name }}"></a>
+      <div class="flex items-start gap-2">
+        {% with brand = st.brand, size = 32 %}{% include "_brand.html" %}{% endwith %}
+        <div class="flex flex-col min-w-0 flex-1">
+          <span class="font-display text-headline-md text-on-surface leading-tight truncate">{{ st.name }}</span>
+          <span class="font-body-sm text-body-sm text-on-surface-variant">km {{ s.km|round(0)|int }} · {{ st.municipio }}/{{ st.uf }}{% if s.detour_km >= 0.5 %} · desvio {{ s.detour_km|round(1)|num }} km (~{{ s.detour_min|hm }}){% endif %}</span>
+        </div>
+        <span class="pill-muted shrink-0">~{{ s.arrive_at|dt("%H:%M") }}</span>
       </div>
-      <div><div class="price">{{ s.money|brl }}</div>
-        <div class="total">{% if s.assumed %}<span class="fee-bad" title="a fonte não informa o preço">≈ {{ s.price_kwh|brl }}/kWh presumido</span>{% elif s.price_kwh is not none %}{{ s.price_kwh|brl }}/kWh{% if o.windows %} <span title="preço por horário">⏱</span>{% endif %}{% else %}{{ o.price_min|brl(3) }}/min{% endif %}</div></div>
-    </div>
-    <div class="muted" style="margin-top:4px">visto {{ st.last_seen_at|dt }} · <a class="maplink" style="position:relative;z-index:2" href="https://www.google.com/maps/dir/?api=1&destination={{ st.lat }},{{ st.lon }}" target="_blank" rel="noopener">🧭 rota até aqui</a></div>
+      <div class="flex flex-wrap items-center gap-1.5 rounded-lg bg-surface-container-low p-2">
+        <span class="chip">{{ o.plug_type }}</span><span class="font-label-sm text-label-sm text-on-surface-variant">{{ o.current_type or "" }} {{ o.power_kw|num }} kW{% if o.count > 1 %} ×{{ o.count }}{% endif %}</span>
+        <span class="ml-auto flex items-center gap-1">
+          {% if o.available %}<span class="pill-ok !py-0"><span class="dot"></span>{{ o.available }} livre(s)</span>{% endif %}
+          {% if o.busy %}<span class="pill-warn !py-0"><span class="dot"></span>{{ o.busy }} em uso</span>{% endif %}
+          {% if o.down %}<span class="pill-bad !py-0"><span class="dot"></span>{{ o.down }} fora</span>{% endif %}
+          {% if o.unknown %}<span class="pill-muted !py-0" title="a fonte não informa estado">estado ?</span>{% endif %}</span>
+      </div>
+      <div class="flex flex-col gap-1">
+        <div class="flex items-center justify-between font-label-md text-label-md"><span class="text-on-surface-variant">Recarga</span><span class="{% if s.assumed %}text-tertiary{% else %}text-primary{% endif %} font-bold tabular-nums">{{ s.arrive_soc|pct }} → {{ s.leave_soc|pct }}</span></div>
+        <div class="bar flex"><i class="!rounded-none !bg-outline-variant" style="width:{{ (s.arrive_soc * 100)|round|int }}%"></i><i class="!rounded-none {% if s.assumed %}!bg-tertiary-container{% endif %}" style="width:{{ ((s.leave_soc - s.arrive_soc) * 100)|round|int }}%"></i></div>
+      </div>
+      <div class="grid grid-cols-2 gap-x-2 gap-y-0.5 font-body-sm text-body-sm text-on-surface-variant">
+        <span>{{ s.kwh_billed|round(1)|num }} kWh</span><span class="text-right">{{ s.charge_min|hm }} de carga{% if s.wait_min %} + {{ s.wait_min|hm }} de espera{% endif %}</span>
+        <span>{% if s.flat %}<span class="text-tertiary">ativação {{ s.flat|brl }}</span>{% else %}sem ativação{% endif %}{% if o.notes %} · {{ o.notes }}{% endif %}</span>
+        <span class="text-right font-semibold tabular-nums {% if s.assumed %}text-tertiary{% else %}text-on-surface{% endif %}">{% if s.assumed %}≈ {% endif %}{{ s.money|brl }} ({% if s.assumed %}≈ {% endif %}{% if s.price_kwh is not none %}{{ s.price_kwh|brl }}/kWh{% else %}{{ o.price_min|brl(3) }}/min{% endif %}{% if o.windows %} <span class="material-symbols-outlined text-[12px]" title="preço por horário">schedule</span>{% endif %})</span>
+      </div>
+      {% if s.assumed %}<span class="pill-warn !py-0 self-start">tarifa presumida</span>{% endif %}
+      <div class="flex items-center justify-between font-label-sm text-label-sm text-outline">
+        <span class="flex items-center gap-2">visto {{ st.last_seen_at|ago }}{% with am = st.amenities, compact = true %}{% include "_amenities.html" %}{% endwith %}</span>
+        <a class="relative z-10 inline-flex items-center gap-1 text-primary font-semibold" href="https://www.google.com/maps/dir/?api=1&destination={{ st.lat }},{{ st.lon }}" target="_blank" rel="noopener"><span class="material-symbols-outlined text-[16px]">explore</span>rota até aqui</a>
+      </div>
+    </article>
   </div>
   {% endfor %}
-  <div class="tl-node"><span class="tl-dot"></span><b>{{ t.dest_nome }}/{{ t.dest_uf }}</b> <span class="muted">km {{ (t.distance_m / 1000)|round(0)|int }} · chega com {{ plan.arrive_soc|pct }} · ~{{ plan.arrive_at|dt("%d/%m %H:%M") }}</span></div>
+  <div class="relative flex items-start gap-space-md">
+    <div class="relative z-10 w-8 h-8 rounded-full bg-secondary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-[18px] text-on-secondary">check</span></div>
+    <div class="flex flex-col min-w-0 pt-0.5"><span class="font-label-sm text-label-sm text-secondary uppercase">Destino</span><span class="font-display text-headline-md text-on-surface truncate">{{ t.dest_nome }}/{{ t.dest_uf }}</span>
+      <span class="font-body-sm text-body-sm text-on-surface-variant">km {{ (t.distance_m / 1000)|round(0)|int }} · ~{{ plan.arrive_at|dt("%d/%m %H:%M") }} · <b class="text-on-surface">chega com {{ plan.arrive_soc|pct }}</b></span></div>
+  </div>
 </div>
-{% if plan.stops|selectattr("assumed")|list %}<p class="muted">≈ = estação sem preço na fonte; o plano usou {{ plan.assumed_price_kwh|brl }}/kWh (90º percentil do corredor, ou o valor informado acima).</p>{% endif %}
+{% if plan.stops|selectattr("assumed")|list %}<p class="font-body-sm text-body-sm text-on-surface-variant mb-3">≈ = estação sem preço na fonte; o plano usou {{ plan.assumed_price_kwh|brl }}/kWh (90º percentil do corredor, ou o valor informado em "ajustar").</p>{% endif %}
 {% else %}
-<div class="card">
-  <div class="name fee-bad">Não há plano viável</div>
-  <div class="muted">{{ plan.reason }}. Autonomia com estes parâmetros: <b>{{ plan.full_range_km|round(0)|int }} km</b> cheia,
-    <b>{{ plan.useful_range_km|round(0)|int }} km</b> úteis entre o teto e a reserva.</div>
-  {% if plan.gaps %}<div style="margin-top:6px"><b>Trechos sem estação alcançável:</b>
-    {% for g in plan.gaps %}<div>km {{ g.from_km|round(0)|int }} ({{ g.from }}) → km {{ g.to_km|round(0)|int }} ({{ g.to }}): <span class="fee-bad">{{ g.km|round(0)|int }} km</span></div>{% endfor %}</div>{% endif %}
-  <div class="muted" style="margin-top:6px">O que ajuda: coletar o corredor inteiro (acima), aumentar o desvio máximo, o teto de carga ou incluir estações sem preço/ocupadas.</div>
-</div>
+<section class="card mb-3 flex flex-col gap-2">
+  <div class="flex items-center gap-2 text-tertiary"><span class="material-symbols-outlined">warning</span><h2 class="font-display text-headline-md">Não há plano viável</h2></div>
+  <p class="font-body-sm text-body-sm text-on-surface-variant">{{ plan.reason }}. Autonomia com estes parâmetros: <b class="text-on-surface">{{ plan.full_range_km|round(0)|int }} km</b> cheia, <b class="text-on-surface">{{ plan.useful_range_km|round(0)|int }} km</b> úteis entre o teto e a reserva.</p>
+  {% if plan.gaps %}
+  <div class="rounded-lg bg-surface-container-low p-2.5 flex flex-col gap-1">
+    <span class="font-label-sm text-label-sm uppercase tracking-wider text-outline">Trechos sem estação alcançável</span>
+    {% for g in plan.gaps %}<div class="font-body-sm text-body-sm text-on-surface">km {{ g.from_km|round(0)|int }} ({{ g.from }}) → km {{ g.to_km|round(0)|int }} ({{ g.to }}): <span class="text-tertiary font-semibold">{{ g.km|round(0)|int }} km</span></div>{% endfor %}
+  </div>{% endif %}
+  <p class="font-body-sm text-body-sm text-on-surface-variant">O que ajuda: coletar o corredor inteiro, aumentar o desvio máximo ou o teto de carga, ou incluir estações sem preço/ocupadas em "ajustar".</p>
+</section>
 {% endif %}
 
+{# ---- ajustar (resumo + folha) ---- #}
+<section class="card-low flex flex-col gap-space-sm mb-3">
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-1.5 text-on-surface"><span class="material-symbols-outlined text-[20px] text-primary">tune</span><h2 class="font-label-md text-label-md font-bold">Parâmetros do plano</h2></div>
+    <span class="font-label-sm text-label-sm text-on-surface-variant">{{ veh.name }}</span>
+  </div>
+  <div class="rounded-lg bg-surface-container-high p-space-sm flex flex-col gap-1 font-body-sm text-body-sm text-on-surface-variant">
+    <div class="flex items-center justify-between"><span>Bateria útil</span><span class="text-on-surface tabular-nums">{{ veh.battery_kwh|num }} kWh</span></div>
+    <div class="flex items-center justify-between"><span>Autonomia</span><span class="text-on-surface tabular-nums">{{ plan.full_range_km|round(0)|int }} km cheia · {{ plan.useful_range_km|round(0)|int }} km úteis ({{ smin }}–{{ smax }} %)</span></div>
+    <div class="flex items-center justify-between"><span>Saída</span><span class="text-on-surface tabular-nums">{{ pp.soc_start_pct }} %{% if pp.depart %} às {{ pp.depart|dt("%d/%m %H:%M") }}{% endif %}</span></div>
+    <div class="flex items-center justify-between"><span>Valor da sua hora</span><span class="text-on-surface tabular-nums">{{ pp.hour_value|brl }}</span></div>
+    <div class="flex items-center justify-between"><span>Desvio máximo</span><span class="text-on-surface tabular-nums">{{ (pp.detour_km or settings.trip_detour_km)|num }} km</span></div>
+  </div>
+  <button class="btn-ghost w-full h-10 text-primary" type="button" data-open="sheet-ajustar">Ajustar parâmetros da viagem<span class="material-symbols-outlined text-[18px]">expand_more</span></button>
+</section>
+<div class="sheet" id="sheet-ajustar" hidden>
+  <form class="panel" method="post" action="/viagens/{{ t.id }}/parametros">
+    <div class="flex items-center justify-between">
+      <span class="font-display text-headline-md text-on-surface flex items-center gap-2"><span class="material-symbols-outlined text-primary">tune</span>Ajustar plano</span>
+      <button type="button" class="w-9 h-9 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface-variant" data-close aria-label="fechar"><span class="material-symbols-outlined text-[20px]">close</span></button>
+    </div>
+    <div class="grid grid-cols-2 gap-2">
+      <div class="field col-span-2"><label>veículo</label><select class="input" name="v">{% for x in vehicles %}<option value="{{ x.id }}" {% if x.id == veh.id %}selected{% endif %}>{{ x.name }}</option>{% endfor %}</select></div>
+      <div class="field col-span-2"><label>saída (data/hora)</label><input class="input" type="datetime-local" name="depart" value="{{ depart_value }}"></div>
+      <div class="field"><label>SoC na saída %</label><input class="input" type="number" name="soc" min="0" max="100" step="1" value="{{ pp.soc_start_pct }}"></div>
+      <div class="field"><label>valor da sua hora (R$)</label><input class="input" type="number" name="hv" min="0" step="5" value="{{ pp.hour_value|num }}"></div>
+      <div class="field"><label>reserva mínima %</label><input class="input" type="number" name="soc_min" min="0" max="100" step="1" value="{{ smin }}"></div>
+      <div class="field"><label>teto de carga %</label><input class="input" type="number" name="soc_max" min="0" max="100" step="1" value="{{ smax }}"></div>
+      <input type="hidden" data-sync="batt" value="{{ veh.battery_kwh }}">
+      <input type="hidden" name="range_source" value="{{ src }}" data-sync="source">
+      <div class="field"><label data-sync-label="range">{{ '= ' if src == 'consumo' }}autonomia real (km, cheia)</label><input class="input {{ 'derived' if src == 'consumo' }}" type="number" name="range" min="30" max="2000" step="any" value="{{ plan.full_range_km|numin if src == 'autonomia' else plan.full_range_km|numin(0) }}" data-sync="range"></div>
+      <div class="field"><label data-sync-label="cons">{{ '= ' if src == 'autonomia' }}consumo kWh/100 km</label><input class="input {{ 'derived' if src == 'autonomia' }}" type="number" name="kwh100" min="3" max="100" step="any" value="{{ (pp.kwh_100km or veh.kwh_100km)|numin if src == 'consumo' else (pp.kwh_100km or veh.kwh_100km)|numin(1) }}" data-sync="cons"></div>
+      <div class="field"><label>desvio máx. da rota (km)</label><input class="input" type="number" name="detour" min="0.5" max="50" step="0.5" value="{{ (pp.detour_km or settings.trip_detour_km)|num }}"></div>
+      <div class="field"><label>preço presumido (R$/kWh)</label><input class="input" type="number" name="assumed" min="0" step="0.05" value="{{ pp.assumed_price_kwh|num if pp.assumed_price_kwh else '' }}" placeholder="{{ plan.assumed_price_kwh|num }} (90º percentil)"></div>
+    </div>
+    <input type="hidden" name="unpriced" value="0"><input type="hidden" name="busy" value="0">
+    <label class="flex items-center gap-2 font-body-sm text-body-sm text-on-surface cursor-pointer"><input type="checkbox" class="accent-primary w-4 h-4" name="unpriced" value="1" {% if pp.include_unpriced %}checked{% endif %}>usar estações sem preço (com o preço presumido)</label>
+    <label class="flex items-center gap-2 font-body-sm text-body-sm text-on-surface cursor-pointer"><input type="checkbox" class="accent-primary w-4 h-4" name="busy" value="1" {% if pp.include_busy %}checked{% endif %}>usar tomadas ocupadas (espera presumida {{ pp.wait_busy_min|num }} min)</label>
+    <button class="btn-primary w-full mt-1" type="submit">Salvar e recalcular plano</button>
+    <span class="font-body-sm text-body-sm text-outline text-center">os valores ficam guardados nesta viagem</span>
+  </form>
+</div>
+
 {# ---- candidatas ---- #}
-<h2>Estações no corredor ({{ cands|length }}, até {{ (pp.detour_km or settings.trip_detour_km)|num }} km da rota)</h2>
-<div class="card tbl"><table>
-  <tr><th class="r">km</th><th>Estação</th><th>Tomadas compatíveis</th><th class="r">R$/kWh</th></tr>
-  {% for s in cands %}
-  <tr {% if s.station_id in chosen %}style="background:var(--chip)"{% endif %}>
-    <td class="r">{{ s.km|round(0)|int }}<div class="muted">+{{ s.detour_km|round(1)|num }}</div></td>
-    <td><a href="/station/{{ s.station_id }}"><b>{{ s.name }}</b></a><div class="muted">{{ s.municipio }}/{{ s.uf }} · {{ s.source }}</div></td>
-    <td>{% for o in s.options %}<div>{{ o.power_kw|num }} kW{% if o.count > 1 %} ×{{ o.count }}{% endif %}
-      <span class="muted">{% if o.available %}<span class="state-Available">{{ o.available }} livre</span>{% endif %}{% if o.busy %} <span class="state-Charging">{{ o.busy }} em uso</span>{% endif %}{% if o.down %} <span class="state-Unavailable">{{ o.down }} fora</span>{% endif %}{% if o.unknown %} ?{% endif %}</span></div>{% endfor %}</td>
-    <td class="r">{% for o in s.options %}<div>{% if o.price_kwh is not none %}{{ o.price_kwh|brl }}{% if o.windows %} ⏱{% endif %}{% elif o.price_min %}{{ o.price_min|brl(3) }}/min{% else %}<span class="fee-bad">?</span>{% endif %}</div>{% endfor %}</td>
-  </tr>
-  {% else %}
-  <tr><td colspan="4" class="muted">nenhuma estação compatível a até {{ (pp.detour_km or settings.trip_detour_km)|num }} km da rota — colete o corredor ou aumente o desvio.</td></tr>
+<div class="flex items-center justify-between px-1 mb-2"><span class="font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">Estações no corredor</span><span class="pill-muted">{{ cands|length }} até {{ (pp.detour_km or settings.trip_detour_km)|num }} km da rota</span></div>
+<section class="card !p-0 overflow-hidden flex flex-col divide-y divide-surface-container-high/60">
+{% for s in cands %}
+<a class="p-space-sm flex flex-col gap-1 {% if s.station_id in chosen %}bg-primary/10{% endif %}" href="/station/{{ s.station_id }}">
+  <div class="flex items-center justify-between gap-2">
+    <div class="flex items-center gap-1.5 min-w-0">{% if s.station_id in chosen %}<span class="dot bg-primary shrink-0"></span>{% endif %}<span class="font-label-md text-label-md text-on-surface truncate {% if s.station_id in chosen %}font-bold{% endif %}">{{ s.name }}</span>{% if s.station_id in chosen %}<span class="pill-info !py-0 !px-1.5 uppercase text-[10px]">no plano</span>{% endif %}</div>
+    <span class="font-body-sm text-body-sm text-on-surface-variant font-mono shrink-0">km {{ s.km|round(0)|int }} <span class="text-outline">+{{ s.detour_km|round(1)|num }}</span></span>
+  </div>
+  <div class="font-body-sm text-body-sm text-outline flex items-center gap-2 flex-wrap">{{ s.municipio }}/{{ s.uf }} · {{ s.source }}{% with am = s.amenities, compact = true %}{% include "_amenities.html" %}{% endwith %}</div>
+  {% for o in s.options %}
+  <div class="flex items-center justify-between gap-2 font-body-sm text-body-sm">
+    <span class="text-on-surface-variant">{{ o.plug_type }} · {{ o.power_kw|num }} kW{% if o.count > 1 %} ×{{ o.count }}{% endif %}
+      {% if o.available %}<span class="text-secondary">({{ o.available }} livre)</span>{% elif o.busy %}<span class="text-tertiary">(em uso)</span>{% elif o.down %}<span class="text-error">(fora do ar)</span>{% elif o.unknown %}<span>(estado ?)</span>{% endif %}</span>
+    <span class="font-display text-telemetry-metric tabular-nums font-semibold {% if o.price_kwh is none and not o.price_min %}text-tertiary{% elif o.is_free %}text-secondary{% else %}text-on-surface{% endif %}">{% if o.is_free and not o.price_kwh %}grátis{% elif o.price_kwh is not none %}{{ o.price_kwh|brl }}<span class="text-[11px] font-normal text-on-surface-variant">/kWh</span>{% if o.windows %} <span class="material-symbols-outlined text-[12px]">schedule</span>{% endif %}{% elif o.price_min %}{{ o.price_min|brl(3) }}<span class="text-[11px] font-normal text-on-surface-variant">/min</span>{% else %}?{% endif %}</span>
+  </div>
   {% endfor %}
-</table></div>
-<p class="muted">Modelo: potência plena até 80 % e 40 % dela acima; 5 % de perda na recarga; desvio = 2 × distância em linha reta × 1,3 a 40 km/h; {{ pp.stop_overhead_min|num }} min por parada.</p>
+</a>
+{% else %}
+<div class="p-space-md text-center font-body-sm text-body-sm text-on-surface-variant">nenhuma estação compatível a até {{ (pp.detour_km or settings.trip_detour_km)|num }} km da rota — colete o corredor ou aumente o desvio.</div>
+{% endfor %}
+</section>
+<p class="font-body-sm text-body-sm text-outline mt-3">Modelo: potência plena até 80 % e 40 % dela acima; 5 % de perda na recarga; desvio = 2 × distância em linha reta × 1,3 a 40 km/h; {{ pp.stop_overhead_min|num }} min por parada. O estado das tomadas é o da última coleta.</p>
+{% endblock %}
+{% block scripts %}
 <script src="/static/rangesync.js"></script>
 <script>
 (function () {

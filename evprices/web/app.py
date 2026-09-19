@@ -1,25 +1,31 @@
 """FastAPI: páginas mobile-first + JSON para Home Assistant/Grafana."""
 from __future__ import annotations
 
+import logging
 import mimetypes
 import re
+import secrets
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, Form, HTTPException, Query, Request, Response
+from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
-from .. import db, home_tariff, operators, timerange, trip as trips_
+from .. import access, amenities, db, home_tariff, operators, timerange, trip as trips_
+from . import auth
 from ..store import is_main
 from ..models import norm_state
 from ..config import settings
 from ..municipios import slug as busca_slug
 
+log = logging.getLogger(__name__)
 app = FastAPI(title="evprices", docs_url="/api/docs", redoc_url=None)
 mimetypes.add_type("image/webp", ".webp")  # python-slim não conhece webp
 mimetypes.add_type("application/manifest+json", ".webmanifest")
@@ -121,10 +127,14 @@ def hm(minutes: Any) -> str:
     return f"{m // 60}h{m % 60:02d}" if m >= 60 else f"{m} min"
 
 
-def ago(v: Optional[datetime]) -> str:
-    """'há 25 min' / 'há 2h10' / 'há 3 d'."""
+def ago(v: Optional[datetime | str]) -> str:
+    """'há 25 min' / 'há 2h10' / 'há 3 d'. Aceita ISO (valores guardados em jsonb)."""
     if not v:
         return ""
+    if isinstance(v, str):
+        v = datetime.fromisoformat(v)
+    if v.tzinfo is None:
+        v = v.replace(tzinfo=TZ)
     m = int((datetime.now(v.tzinfo) - v).total_seconds() // 60)
     if m < 1:
         return "agora"
@@ -140,7 +150,59 @@ def pct(v: Any) -> str:
 
 
 templates.env.filters.update(brl=brl, num=num, numin=numin, dt=dt, date=date_, hm=hm, pct=pct, ago=ago)
-templates.env.globals.update(idle_desc=idle_desc, settings=settings, brand_badge=brand_badge, brand_logo=brand_logo)
+templates.env.globals.update(idle_desc=idle_desc, settings=settings, brand_badge=brand_badge, brand_logo=brand_logo,
+                             norm_state=norm_state, AMENITY_KEYS=amenities.KEYS)
+
+
+def _static_version() -> str:
+    """Hash do app.css compilado: vai em ?v= para o navegador/Cloudflare/service worker não servirem CSS velho."""
+    import hashlib
+    try:
+        return hashlib.md5((_HERE / "static" / "app.css").read_bytes()).hexdigest()[:8]
+    except OSError:
+        return "0"
+
+
+templates.env.globals["static_v"] = _static_version()
+
+
+# ---------- área do dono: sessão + registro de acessos ----------
+class NeedLogin(Exception):
+    """Rota da área do dono sem sessão: manda para o login e volta depois."""
+
+
+@app.exception_handler(NeedLogin)
+def _need_login(request: Request, exc: NeedLogin):
+    if request.method != "GET":
+        raise HTTPException(403, "área do dono: faça login")
+    return RedirectResponse(f"/admin/login?next={quote(str(request.url.path))}", status_code=303)
+
+
+def owner(request: Request) -> None:
+    if not request.state.owner:
+        raise NeedLogin()
+
+
+@app.middleware("http")
+async def owner_and_access(request: Request, call_next):
+    """Marca a sessão do dono (request.state.owner) e registra cada página HTML servida em access_log."""
+    request.state.owner = auth.is_owner(request)
+    resp = await call_next(request)
+    path = request.url.path
+    if (request.method == "GET" and resp.status_code < 400 and not path.startswith(access.SKIP_PREFIXES)
+            and "text/html" in resp.headers.get("content-type", "")):
+        vid = request.cookies.get("vid") or ""
+        if not re.fullmatch(r"[0-9a-f]{16}", vid):
+            vid = secrets.token_hex(8)
+            resp.set_cookie("vid", vid, max_age=2 * 365 * 86400, samesite="lax", httponly=True)
+        try:
+            await run_in_threadpool(
+                access.record, vid, path, access.client_ip(request.headers, request.client.host if request.client else None),
+                request.headers, request.headers.get("user-agent", ""), request.cookies.get("pwa") == "1",
+                request.headers.get("referer"), request.state.owner, request.headers.get("host"))
+        except Exception as e:  # noqa: BLE001 — o log nunca pode derrubar a página
+            log.warning("access_log: %s", e)
+    return resp
 
 
 # ---------- consultas ----------
@@ -154,30 +216,69 @@ def _scenario(kwh: float | None, charge_min: float | None, idle_min: float | Non
 
 
 SCENARIO_COOKIE = "scenario"
+LOSS = 1.05
 
 
-def _page_scenario(request: Request, kwh: float | None, charge_min: float | None, idle_min: float | None
-                   ) -> tuple[dict[str, float], bool]:
-    """Cenário das páginas: o que veio no formulário; senão a última escolha (cookie); senão zeros.
-    Retorna (cenário, veio_do_formulário) — quando veio do formulário, a resposta grava o cookie."""
-    if kwh is not None or charge_min is not None or idle_min is not None:
-        return {"kwh": kwh or 0, "charge_min": charge_min or 0, "idle_min": idle_min or 0}, True
-    c = request.cookies.get(SCENARIO_COOKIE, "")
-    try:
-        k, cm, im = (float(x) for x in c.split(","))
-        return {"kwh": k, "charge_min": cm, "idle_min": im}, False
-    except ValueError:
-        return {"kwh": 0, "charge_min": 0, "idle_min": 0}, False
+def _int(v: str | None) -> int | None:
+    """?v= vem vazio no modo manual (select 'informar à mão')."""
+    return int(v) if v and v.isdigit() else None   # perda na recarga (o mesmo 5 % do plano de viagem)
 
 
-def _remember_scenario(resp, sc: dict[str, float]) -> None:
-    resp.set_cookie(SCENARIO_COOKIE, f"{sc['kwh']},{sc['charge_min']},{sc['idle_min']}", max_age=365 * 86400, samesite="lax")
+def _vehicle_scenario(veh: trips_.Vehicle, soc_from: int, soc_to: int, idle_min: float) -> dict[str, Any]:
+    """Cenário a partir do carro: kWh = bateria útil × faixa de SoC (+5 % de perda). Os minutos são por estação
+    (potência da tomada limitada pelo DC máx. do carro; acima de 80 % a 40 % da potência) — ver PRICES_SQL."""
+    soc_from, soc_to = max(0, min(100, soc_from)), max(0, min(100, soc_to))
+    if soc_to <= soc_from:
+        soc_to = min(100, soc_from + 1)
+    kwh80 = veh.battery_kwh * max(0, min(soc_to, 80) - soc_from) / 100 * LOSS
+    kwh_hi = veh.battery_kwh * max(0, soc_to - max(soc_from, 80)) / 100 * LOSS
+    return {"kwh": round(kwh80 + kwh_hi, 1), "charge_min": 0, "idle_min": idle_min, "v": veh.id, "vehicle": veh,
+            "soc_from": soc_from, "soc_to": soc_to, "kwh80": kwh80, "kwh_hi": kwh_hi, "max_dc": veh.max_dc_kw}
 
 
+def _page_scenario(request: Request, kwh: float | None, charge_min: float | None, idle_min: float | None,
+                   v: int | None = None, soc_from: int | None = None, soc_to: int | None = None
+                   ) -> tuple[dict[str, Any], bool]:
+    """Cenário das páginas: o que veio do formulário; senão a última escolha (cookie); senão zeros.
+    Dois modos: pelo veículo (v + soc_from/soc_to) ou manual (kwh + charge_min). Retorna (cenário, veio_do_formulário)."""
+    from_form = any(x is not None for x in (kwh, charge_min, idle_min, v, soc_from, soc_to)) or "v" in request.query_params
+    if not from_form:
+        c = request.cookies.get(SCENARIO_COOKIE, "")
+        parts = c.split(",")
+        try:
+            kwh, charge_min, idle_min = (float(x) for x in parts[:3])
+            if len(parts) >= 6 and parts[3]:
+                v, soc_from, soc_to = int(parts[3]), int(parts[4]), int(parts[5])
+        except ValueError:
+            kwh = charge_min = idle_min = 0
+        if not c:   # primeira visita: o veículo padrão, 20 → 80 %
+            with db.connect() as conn:
+                dv = trips_.vehicle(conn, None)
+            if dv:
+                v, idle_min = dv.id, settings.default_idle_min
+    if v:
+        with db.connect() as conn:
+            veh = trips_.vehicle(conn, v)
+        if veh:
+            return _vehicle_scenario(veh, soc_from if soc_from is not None else 20, soc_to if soc_to is not None else 80,
+                                     idle_min or 0), from_form
+    return {"kwh": kwh or 0, "charge_min": charge_min or 0, "idle_min": idle_min or 0, "v": None}, from_form
+
+
+def _remember_scenario(resp, sc: dict[str, Any]) -> None:
+    tail = f",{sc['v']},{sc['soc_from']},{sc['soc_to']}" if sc.get("v") else ",,,"
+    resp.set_cookie(SCENARIO_COOKIE, f"{sc['kwh']},{sc['charge_min']},{sc['idle_min']}{tail}", max_age=365 * 86400, samesite="lax")
+
+
+# minutos carregando: fixos (cenário manual) ou por tomada (cenário pelo carro): kWh até 80 % à potência plena,
+# o resto a 40 % — potência = menor entre a da tomada e o DC máx. do carro
 PRICES_SQL = """
-SELECT cp.*, e.price_kwh_used, e.energy_cost, e.time_cost, e.idle_cost, e.flat_cost, e.total
+SELECT cp.*, e.price_kwh_used, e.energy_cost, e.time_cost, e.idle_cost, e.flat_cost, e.total, cm.charge_min AS charge_min_used
 FROM current_prices cp
-LEFT JOIN LATERAL estimate_session_cost(cp.connector_id, %(kwh)s::numeric, %(charge_min)s::numeric, %(idle_min)s::numeric, now()) e ON true
+CROSS JOIN LATERAL (SELECT CASE WHEN %(max_dc)s::numeric IS NULL OR cp.power_kw IS NULL OR cp.power_kw <= 0 THEN %(charge_min)s::numeric
+                                ELSE round((%(kwh80)s::numeric / LEAST(cp.power_kw, %(max_dc)s::numeric)
+                                          + %(kwh_hi)s::numeric / (0.4 * LEAST(cp.power_kw, %(max_dc)s::numeric))) * 60) END AS charge_min) cm
+LEFT JOIN LATERAL estimate_session_cost(cp.connector_id, %(kwh)s::numeric, cm.charge_min, %(idle_min)s::numeric, now()) e ON true
 WHERE cp.municipio_id = %(municipio)s
 ORDER BY e.total NULLS LAST, cp.price_kwh NULLS LAST, cp.station, cp.connector_no
 """
@@ -204,8 +305,13 @@ def _selected_municipio(request: Request, m: int | None) -> int | None:
     return int(c) if c and c.isdigit() else None
 
 
-def _prices_params(sc: dict[str, float], municipio_id: int) -> dict[str, Any]:
-    return {**sc, "municipio": municipio_id, "min_kw": settings.min_power_kw}
+def _sql_scenario(sc: dict[str, Any]) -> dict[str, Any]:
+    return {"kwh": sc["kwh"], "charge_min": sc["charge_min"], "idle_min": sc["idle_min"],
+            "max_dc": sc.get("max_dc"), "kwh80": sc.get("kwh80") or 0, "kwh_hi": sc.get("kwh_hi") or 0}
+
+
+def _prices_params(sc: dict[str, Any], municipio_id: int) -> dict[str, Any]:
+    return {**_sql_scenario(sc), "municipio": municipio_id, "min_kw": settings.min_power_kw}
 
 
 FAV_PRICES_SQL = PRICES_SQL.replace("WHERE cp.municipio_id = %(municipio)s",
@@ -224,7 +330,7 @@ def _grouped_prices(sc: dict[str, float], municipio_id: int | None, favorites_on
     with db.connect() as conn:
         favs = _favorites(conn)
         if municipio_id is None:
-            rows = conn.execute(FAV_PRICES_SQL, {**sc, "min_kw": settings.min_power_kw}).fetchall()
+            rows = conn.execute(FAV_PRICES_SQL, {**_sql_scenario(sc), "min_kw": settings.min_power_kw}).fetchall()
         else:
             rows = conn.execute(PRICES_SQL, _prices_params(sc, municipio_id)).fetchall()
     stations: dict[int, dict[str, Any]] = {}
@@ -267,7 +373,10 @@ def _grouped_prices(sc: dict[str, float], municipio_id: int | None, favorites_on
                 alts = operators.alternatives(conn, {"id": st["station_id"], "source_id": first["source_id"],
                                                      "lat": first["lat"], "lon": first["lon"], "brand": st["brand"]})
                 st["alt"] = alts[0] if alts else None
+    with db.connect() as conn:
+        amen = amenities.for_stations(conn, list(stations))
     for st in out:
+        st["amenities"] = amen.get(st["station_id"])
         st["priced"] = any(o["price_kwh"] is not None or o["price_min"] for o in st["options"].values())
         st["main"] = any(o["main"] for o in st["options"].values())
         st["options"] = sorted(
@@ -287,12 +396,15 @@ def _grouped_prices(sc: dict[str, float], municipio_id: int | None, favorites_on
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, m: int | None = Query(None), kwh: float | None = Query(None, ge=0),
           charge_min: float | None = Query(None, ge=0), idle_min: float | None = Query(None, ge=0),
-          fav: int = Query(0)):
-    sc, from_form = _page_scenario(request, kwh, charge_min, idle_min)
+          fav: int = Query(0), v: str | None = Query(None), soc_from: int | None = Query(None, ge=0, le=100),
+          soc_to: int | None = Query(None, ge=0, le=100)):
+    sc, from_form = _page_scenario(request, kwh, charge_min, idle_min, _int(v), soc_from, soc_to)
     mid = _selected_municipio(request, m)
     mun, stations, last_run = None, [], None
     with db.connect() as conn:
         ufs = conn.execute("SELECT id, sigla, nome FROM uf ORDER BY sigla").fetchall()
+        monitored = conn.execute(MUNICIPIO_SQL + " WHERE m.monitored ORDER BY m.last_collected_at DESC NULLS LAST, m.nome").fetchall()
+        vehicles = trips_.vehicles(conn)
         if mid is not None:
             mun = _municipio(conn, mid)
     home = None
@@ -307,7 +419,7 @@ def index(request: Request, m: int | None = Query(None), kwh: float | None = Que
         ops = operators.states(conn)
     resp = templates.TemplateResponse(
         request, "index.html", {"stations": stations, "sc": sc, "last_run": last_run, "mun": mun, "ufs": ufs, "home": home,
-                                "fav": fav, "ops": ops}
+                                "fav": fav, "ops": ops, "monitored": monitored, "vehicles": vehicles}
     )
     if m is not None and mun:   # ?m= vira o padrão nas próximas visitas
         resp.set_cookie("municipio", str(mun["id"]), max_age=365 * 86400, samesite="lax")
@@ -434,12 +546,14 @@ def api_evolution(municipio: int):
 
 @app.get("/favoritas", response_class=HTMLResponse)
 def favoritas_page(request: Request, kwh: float | None = Query(None, ge=0), charge_min: float | None = Query(None, ge=0),
-                   idle_min: float | None = Query(None, ge=0)):
-    sc, from_form = _page_scenario(request, kwh, charge_min, idle_min)
+                   idle_min: float | None = Query(None, ge=0), v: str | None = Query(None),
+                   soc_from: int | None = Query(None, ge=0, le=100), soc_to: int | None = Query(None, ge=0, le=100)):
+    sc, from_form = _page_scenario(request, kwh, charge_min, idle_min, _int(v), soc_from, soc_to)
     stations = _grouped_prices(sc, None, favorites_only=True)
     with db.connect() as conn:
         ops = operators.states(conn)
-    resp = templates.TemplateResponse(request, "favoritas.html", {"stations": stations, "sc": sc, "ops": ops})
+        vehicles = trips_.vehicles(conn)
+    resp = templates.TemplateResponse(request, "favoritas.html", {"stations": stations, "sc": sc, "ops": ops, "vehicles": vehicles})
     if from_form:
         _remember_scenario(resp, sc)
     return resp
@@ -471,9 +585,11 @@ def municipios_page(request: Request):
     with db.connect() as conn:
         rows = conn.execute(
             MUNICIPIO_SQL + " WHERE m.monitored OR m.collect_requested_at IS NOT NULL OR m.collecting_since IS NOT NULL"
-            " OR EXISTS (SELECT 1 FROM station s WHERE s.municipio_id = m.id) ORDER BY u.sigla, m.nome"
+            " OR EXISTS (SELECT 1 FROM station s WHERE s.municipio_id = m.id) ORDER BY m.monitored DESC, u.sigla, m.nome"
         ).fetchall()
-    return templates.TemplateResponse(request, "municipios.html", {"rows": rows})
+    nxt = [r["last_collected_at"] + timedelta(hours=settings.collect_interval_hours) for r in rows
+           if r["monitored"] and r["last_collected_at"]]
+    return templates.TemplateResponse(request, "municipios.html", {"rows": rows, "next_at": min(nxt) if nxt else None})
 
 
 def _station(conn, station_id: int) -> dict[str, Any]:
@@ -486,13 +602,14 @@ def _station(conn, station_id: int) -> dict[str, Any]:
 
 @app.get("/station/{station_id}", response_class=HTMLResponse)
 def station_page(request: Request, station_id: int, from_: str | None = Query(None, alias="from"),
-                 to: str | None = Query(None)):
+                 to: str | None = Query(None), ok: str | None = Query(None)):
     rng, from_form = _page_range(request, from_, to)
     with db.connect() as conn:
         st = _station(conn, station_id)
         ops = operators.states(conn)
         mun = _municipio(conn, st["municipio_id"]) if st["municipio_id"] else None
         st["favorite"] = station_id in _favorites(conn)
+        st["amenities"] = amenities.for_stations(conn, [station_id]).get(station_id)
         evo = _evolution(conn, None, station_id)
         home = _home_for(conn, mun, evo, rng["start_dt"].date(), rng["end_dt"].date())
         connectors = conn.execute(
@@ -521,10 +638,22 @@ def station_page(request: Request, station_id: int, from_: str | None = Query(No
             st["alt"] = alts[0] if alts else None
     resp = templates.TemplateResponse(
         request, "station.html", {"st": st, "connectors": connectors, "mun": mun, "evo": evo, "home": home, "rng": rng,
-                                  "ops": ops}
+                                  "ops": ops, "ok": ok}
     )
     _remember_range(resp, rng, from_form)
     return resp
+
+
+@app.post("/station/{station_id}/comodidades")
+async def station_amenities_save(request: Request, station_id: int):
+    """Comodidades informadas pelo usuário (qualquer visitante): sim / não / não sei por item + wifi + observação."""
+    form = await request.form()
+    with db.connect() as conn:
+        _station(conn, station_id)
+        vals = {k: {"1": True, "0": False}.get(str(form.get(k, ""))) for k in amenities.KEYS}
+        amenities.save(conn, station_id, vals, str(form.get("wifi_ssid", "")), str(form.get("wifi_password", "")),
+                       str(form.get("notes", "")), "dono" if request.state.owner else "visitante")
+    return RedirectResponse(f"/station/{station_id}?ok=comodidades+salvas#comodidades", status_code=303)
 
 
 # ---------- operadores com login (On-Charge…) ----------
@@ -541,7 +670,7 @@ def _account_form(platform: str, slug: str, name: str, email: str, password: str
 
 
 @app.get("/operadores", response_class=HTMLResponse)
-def operadores_page(request: Request, ok: str | None = Query(None), acct: str | None = Query(None)):
+def operadores_page(request: Request, ok: str | None = Query(None), acct: str | None = Query(None), _=Depends(owner)):
     """Contas por plataforma + estado do sincronizador. Só lê o banco: nunca dispara chamada à API daqui."""
     with db.connect() as conn:
         ops = operators.states(conn)
@@ -550,7 +679,8 @@ def operadores_page(request: Request, ok: str | None = Query(None), acct: str | 
 
 
 @app.get("/operadores/{platform}", response_class=HTMLResponse)
-def operador_page(request: Request, platform: str, ok: str | None = Query(None), acct: str | None = Query(None)):
+def operador_page(request: Request, platform: str, ok: str | None = Query(None), acct: str | None = Query(None),
+                  _=Depends(owner)):
     if platform not in operators.PLATFORMS:
         raise HTTPException(404)
     with db.connect() as conn:
@@ -561,7 +691,7 @@ def operador_page(request: Request, platform: str, ok: str | None = Query(None),
 
 @app.post("/operadores/{platform}")
 def operador_save(platform: str, slug: str = Form(""), name: str = Form(""), email: str = Form(""),
-                  password: str = Form(""), api_key: str = Form(""), action: str = Form("save")):
+                  password: str = Form(""), api_key: str = Form(""), action: str = Form("save"), _=Depends(owner)):
     """Cria/atualiza/remove uma conta da plataforma (formulário de /operadores)."""
     with db.connect() as conn:
         if action == "delete":
@@ -574,7 +704,7 @@ def operador_save(platform: str, slug: str = Form(""), name: str = Form(""), ema
 
 
 @app.get("/station/{station_id}/acesso", response_class=HTMLResponse)
-def station_access_page(request: Request, station_id: int, ok: str | None = Query(None)):
+def station_access_page(request: Request, station_id: int, ok: str | None = Query(None), _=Depends(owner)):
     """Por que esta estação está sem preço e o que dá para configurar (login/conta/Api-Key). Só banco."""
     with db.connect() as conn:
         st = _station(conn, station_id)
@@ -592,7 +722,7 @@ def station_access_page(request: Request, station_id: int, ok: str | None = Quer
 
 @app.post("/station/{station_id}/acesso")
 def station_access_save(station_id: int, platform: str = Form(...), slug: str = Form(""), name: str = Form(""),
-                        email: str = Form(""), password: str = Form(""), api_key: str = Form("")):
+                        email: str = Form(""), password: str = Form(""), api_key: str = Form(""), _=Depends(owner)):
     """Cadastra/atualiza a conta (nova ou existente) a partir da página da estação."""
     with db.connect() as conn:
         st = _station(conn, station_id)
@@ -610,15 +740,76 @@ def api_operators():
         return operators.states(conn)
 
 
+RUN_FILTERS = {"running": "r.finished_at IS NULL", "changes": "(r.tariffs_changed > 0 OR r.tariffs_new > 0)",
+               "error": "r.error IS NOT NULL"}
+
+
 @app.get("/runs", response_class=HTMLResponse)
-def runs_page(request: Request):
+def runs_page(request: Request, f: str | None = Query(None), _=Depends(owner)):
+    where = RUN_FILTERS.get(f or "", "true")
     with db.connect() as conn:
         runs = conn.execute(
             "SELECT r.*, s.slug AS source, m.nome || '/' || u.sigla AS municipio FROM observation_run r "
             "LEFT JOIN source s ON s.id = r.source_id LEFT JOIN municipio m ON m.id = r.municipio_id "
-            "LEFT JOIN uf u ON u.id = m.uf_id ORDER BY r.started_at DESC LIMIT 50"
+            f"LEFT JOIN uf u ON u.id = m.uf_id WHERE {where} ORDER BY r.started_at DESC LIMIT 60"
         ).fetchall()
-    return templates.TemplateResponse(request, "runs.html", {"runs": runs})
+        stats = conn.execute(
+            "SELECT count(*) AS total, count(error) AS errors, COALESCE(sum(tariffs_changed), 0) AS changed "
+            "FROM observation_run WHERE started_at > now() - interval '24 hours'").fetchone()
+        ops = operators.states(conn)
+    return templates.TemplateResponse(request, "runs.html", {"runs": runs, "f": f if f in RUN_FILTERS else None,
+                                                             "stats": stats, "ops": ops})
+
+
+# ---------- área do dono: login e acessos ----------
+@app.get("/admin/login", response_class=HTMLResponse)
+def admin_login_page(request: Request, next: str | None = Query(None), err: str | None = Query(None)):
+    if request.state.owner:
+        return RedirectResponse(next if next and next.startswith("/") else "/admin/acessos", status_code=303)
+    return templates.TemplateResponse(request, "login.html", {"next": next, "err": err, "configured": auth.configured()})
+
+
+@app.post("/admin/login")
+def admin_login(username: str = Form(""), password: str = Form(""), remember: int = Form(0), next: str = Form("")):
+    if not auth.configured():
+        return RedirectResponse("/admin/login?err=" + quote("ADMIN_USER/ADMIN_PASSWORD não definidos no .env"), status_code=303)
+    if not auth.check_login(username.strip(), password):
+        return RedirectResponse(f"/admin/login?err={quote('usuário ou senha incorretos')}&next={quote(next)}", status_code=303)
+    value, max_age = auth.token(bool(remember))
+    resp = RedirectResponse(next if next.startswith("/") else "/admin/acessos", status_code=303)
+    resp.set_cookie(auth.COOKIE, value, max_age=max_age, samesite="lax", httponly=True)
+    return resp
+
+
+@app.get("/admin/logout")
+def admin_logout():
+    resp = RedirectResponse("/", status_code=303)
+    resp.delete_cookie(auth.COOKIE)
+    return resp
+
+
+@app.get("/admin/acessos", response_class=HTMLResponse)
+def admin_acessos(request: Request, p: str = Query("24h"), _=Depends(owner)):
+    if p not in access.PERIODS:
+        p = "24h"
+    with db.connect() as conn:
+        now_ = access.active_now(conn)
+        ser = access.series(conn, p)
+        org = access.origins(conn, ser["start"])
+        first = conn.execute("SELECT min(ts) AS t FROM access_log").fetchone()["t"]
+    me = request.cookies.get("vid")
+    return templates.TemplateResponse(request, "acessos.html", {"now": now_, "ser": ser, "org": org, "me": me,
+                                                                "first": first, "periods": list(access.PERIODS)})
+
+
+@app.get("/admin/acessos/agora")
+def admin_acessos_agora(request: Request, _=Depends(owner)):
+    """Só o bloco 'agora' (a página consulta a cada 15 s)."""
+    with db.connect() as conn:
+        rows = access.active_now(conn)
+    return {"n": len(rows), "visitors": [{"place": r["place"], "page": r["page"], "device": r["device"], "browser": r["browser"],
+                                          "pwa": r["pwa"], "ago": ago(r["ts"]), "me": r["visitor"] == request.cookies.get("vid"),
+                                          "ip": r["ip_masked"]} for r in rows]}
 
 
 # ---------- JSON: municípios ----------
@@ -693,8 +884,8 @@ def api_select(municipio_id: int, response: Response):
 
 
 @app.post("/api/municipio/{municipio_id}/unmonitor")
-def api_unmonitor(municipio_id: int):
-    """Sai do ciclo periódico. Estações e histórico ficam no banco."""
+def api_unmonitor(municipio_id: int, _=Depends(owner)):
+    """Sai do ciclo periódico. Estações e histórico ficam no banco. Só o dono (área logada) pode parar."""
     with db.connect() as conn:
         n = conn.execute("UPDATE municipio SET monitored = false, collect_requested_at = NULL WHERE id = %s",
                          (municipio_id,)).rowcount
@@ -788,6 +979,9 @@ def _trip_page_data(conn, t: dict[str, Any], pp: trips_.PlanParams, vehicle_id: 
         raise HTTPException(409, "cadastre um veículo em /veiculos")
     cor = trips_.corridor(conn, t["id"])
     cands = trips_.candidates(conn, t["id"], veh, pp.detour_km)
+    amen = amenities.for_stations(conn, [c["station_id"] for c in cands])
+    for c in cands:
+        c["amenities"] = amen.get(c["station_id"])
     plan = trips_.plan(t, veh, cands, pp)
     chosen = {s.station["station_id"] for s in plan.stops}
     cov = {
@@ -841,6 +1035,10 @@ def viagem_page(request: Request, trip_id: int, v: int | None = Query(None), soc
         pp, v = _saved_trip_params(conn, t, v, soc, soc_min, soc_max, kwh100, hv, depart, detour, unpriced, busy, assumed,
                                    range_km)
         data = _trip_page_data(conn, t, pp, v)
+        pl = data["plan"]
+        trips_.save_plan_summary(conn, trip_id, {
+            "ok": pl.ok, "stops": len(pl.stops), "kwh": round(pl.kwh_billed, 1), "money": round(pl.money, 2),
+            "arrive_soc": round((pl.arrive_soc or 0) * 100), "at": datetime.now(TZ).isoformat()})
     data["ok"] = ok
     data["depart_value"] = (pp.depart or datetime.now(TZ)).strftime("%Y-%m-%dT%H:%M")
     return templates.TemplateResponse(request, "viagem.html", data)
@@ -1007,6 +1205,10 @@ def veiculos_save(id: int | None = Form(None), name: str = Form(""), battery_kwh
             if action == "delete" and id is not None:
                 trips_.delete_vehicle(conn, id)
                 return RedirectResponse("/veiculos?ok=veículo removido", status_code=303)
+            if action == "default" and id is not None:
+                conn.execute("UPDATE vehicle SET is_default = (id = %s)", (id,))
+                conn.commit()
+                return RedirectResponse("/veiculos?ok=veículo padrão alterado", status_code=303)
             trips_.save_vehicle(conn, id, name=name, battery_kwh=_dec(battery_kwh) or Decimal(0), range_km=_dec(range_km),
                                 kwh_100km=_dec(kwh_100km), range_source=range_source, max_dc_kw=_dec(max_dc_kw) or Decimal(0),
                                 plug_types=plug_types, soc_min_pct=soc_min_pct, soc_max_pct=soc_max_pct,

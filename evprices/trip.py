@@ -202,7 +202,7 @@ def reroute(conn: psycopg.Connection, trip_id: int) -> None:
 
 TRIP_SQL = """
 SELECT t.id, t.name, t.origin_municipio_id, t.dest_municipio_id, t.origin_lat, t.origin_lon, t.dest_lat, t.dest_lon,
-       t.distance_m, t.duration_s, t.router, t.routed_at, t.created_at, t.plan_params,
+       t.distance_m, t.duration_s, t.router, t.routed_at, t.created_at, t.plan_params, t.plan_summary,
        mo.nome AS origin_nome, uo.sigla AS origin_uf, md.nome AS dest_nome, ud.sigla AS dest_uf
   FROM trip t
   LEFT JOIN municipio mo ON mo.id = t.origin_municipio_id LEFT JOIN uf uo ON uo.id = mo.uf_id
@@ -221,6 +221,12 @@ def trip(conn: psycopg.Connection, trip_id: int) -> dict[str, Any] | None:
 def save_plan_params(conn: psycopg.Connection, trip_id: int, params: dict[str, Any]) -> None:
     """Guarda o painel 'ajustar' da viagem (só o que veio preenchido) para reabrir com os mesmos valores."""
     conn.execute("UPDATE trip SET plan_params = %s WHERE id = %s", (Json(params), trip_id))
+    conn.commit()
+
+
+def save_plan_summary(conn: psycopg.Connection, trip_id: int, summary: dict[str, Any]) -> None:
+    """Resumo do último plano calculado (paradas, kWh, R$, SoC de chegada) — só para o card da lista de viagens."""
+    conn.execute("UPDATE trip SET plan_summary = %s WHERE id = %s", (Json(summary), trip_id))
     conn.commit()
 
 

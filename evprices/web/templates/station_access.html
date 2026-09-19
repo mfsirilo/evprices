@@ -1,69 +1,98 @@
 {% extends "base.html" %}
-{% block title %}{{ st.name }} — acesso ao preço{% endblock %}
+{% block page_title %}{{ st.name }} · acesso{% endblock %}
 {% block content %}
 {% set pl = acc.platform %}
-<div class="card">
-  <div class="name" style="white-space:normal">{{ st.name }}</div>
-  <div class="muted">{{ st.address or "" }}</div>
-  <div style="margin-top:8px"><a class="btn ghost small" href="/station/{{ st.id }}" data-back>← voltar à estação</a></div>
+<div class="flex items-center justify-between mb-2">
+  <a class="inline-flex items-center gap-1 text-primary font-label-md text-label-md" href="/station/{{ st.id }}" data-back><span class="material-symbols-outlined text-[18px]">arrow_back</span>Voltar à estação</a>
+  <span class="pill-muted"><span class="material-symbols-outlined text-[13px]">lock</span>área do dono</span>
 </div>
-{% if ok %}<div class="card ok-msg">✔ {{ ok }}. O próximo ciclo do sincronizador (a cada {{ pl.interval_min|num }} min) usa a conta.</div>{% endif %}
-
-<h2>Por que {% if acc.priced %}o preço vem do app{% else %}o preço está desconhecido{% endif %}</h2>
-<div class="card">
-  <div>Fonte: <b>{{ pl.name }}</b> (API do app, exige conta) · ID no mapa público <code>{{ st.external_id }}</code>{% if acc.chargebox_id %} · chargeBoxId <code>{{ acc.chargebox_id }}</code>{% endif %}</div>
-  <div class="muted" style="margin-top:4px">
-    {% if acc.public_status %}status no mapa público: <span class="state-{{ acc.public_status }}">{{ acc.public_status }}</span> · {% endif %}
-    {% if acc.listed_by %}listada no app pela conta <b>{{ acc.listed_by.account }}</b> (tenant {{ acc.listed_by.tenant or "?" }}, ativa={{ acc.listed_by.active }}, cobra={{ acc.listed_by.has_payment }}) em {{ acc.listed_by.fetched_at|dt }}
-    {% else %}<b>não aparece</b> na lista do app de nenhuma conta configurada{% endif %}
+<section class="card-low flex flex-col gap-space-sm mb-3">
+  <div class="flex items-start gap-space-md">
+    {% with brand = st.brand %}{% include "_brand.html" %}{% endwith %}
+    <div class="flex flex-col min-w-0 flex-1">
+      <div class="flex items-center gap-1.5 font-label-sm text-label-sm"><span class="text-primary uppercase tracking-wider">{{ pl.name }} · api do app</span><span class="text-outline-variant">•</span><span class="text-on-surface-variant font-mono">#{{ st.external_id }}</span></div>
+      <h1 class="font-display text-headline-md text-on-surface">{{ st.name }}</h1>
+      <p class="font-body-sm text-body-sm text-on-surface-variant">{{ st.address or "" }}</p>
+    </div>
   </div>
-  {% if acc.action %}<div style="margin-top:8px" class="{% if acc.reason in ('ok', 'migrada') %}muted{% else %}fee-bad{% endif %}">{{ acc.action }}</div>{% endif %}
-  {% if acc.alternatives %}
-  <div style="margin-top:8px"><b>Estações com preço a menos de 300 m (outras fontes):</b>
-    {% for a in acc.alternatives %}<div>→ <a class="maplink" href="/station/{{ a.id }}">{{ a.name }}</a> <span class="muted">({{ a.source }} · {{ a.dist_m|num }} m · {{ a.power_kw|num }} kW · <span class="state-{{ a.state }}">{{ a.state or "" }}</span>)</span> <b>{{ a.price_kwh|brl }}/kWh</b></div>{% endfor %}
-  </div>{% endif %}
-  {% if pl.last_error %}<div class="fee-bad" style="margin-top:6px">⚠️ última sincronização: {{ pl.last_error }}</div>{% endif %}
-  {% if pl.missing_key %}<div class="fee-bad" style="margin-top:6px">🔎 Falta a Api-Key da(s) conta(s): {% for a in pl.missing_key %}<b>{{ a.name }}</b>{% if not loop.last %}, {% endif %}{% endfor %} — sem ela o sincronizador não consegue usar a conta. É preciso extrair a chave do app correspondente (tráfego/APK).</div>{% endif %}
-</div>
+  <div class="flex items-center justify-between rounded-lg bg-surface-container px-3 py-2 font-body-sm text-body-sm text-on-surface-variant">
+    <span class="flex items-center gap-2"><span class="material-symbols-outlined text-[16px] text-tertiary">lock</span>preço só com conta do app</span>
+    {% if acc.listed_by and acc.listed_by.tenant %}<span class="chip">tenant {{ acc.listed_by.tenant }}</span>{% endif %}
+  </div>
+</section>
+{% if ok %}<div class="card-low mb-3 flex items-start gap-2 text-secondary"><span class="material-symbols-outlined text-[20px]">check_circle</span><span class="font-body-sm text-body-sm">{{ ok }}. O próximo ciclo do sincronizador (a cada {{ pl.interval_min|num }} min) usa a conta.</span></div>{% endif %}
 
-<h2>Contas da plataforma {{ pl.name }}</h2>
+<section class="card-low flex flex-col gap-space-sm mb-3">
+  <div class="flex items-center gap-2">
+    <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 {% if acc.reason in ('ok',) %}bg-secondary-container/20 text-secondary{% else %}bg-tertiary-container/20 text-tertiary{% endif %}"><span class="material-symbols-outlined text-[18px]">{% if acc.reason == 'ok' %}check_circle{% else %}error{% endif %}</span></div>
+    <h2 class="font-display text-headline-md text-on-surface">{% if acc.priced %}Por que o preço vem do app{% else %}Por que o preço está desconhecido{% endif %}</h2>
+  </div>
+  <div class="font-body-sm text-body-sm text-on-surface-variant flex flex-col gap-1">
+    <div>Fonte: <b class="text-on-surface">{{ pl.name }}</b> (API do app, exige conta) · ID no mapa público <span class="kbd">{{ st.external_id }}</span>{% if acc.chargebox_id %} · chargeBoxId <span class="kbd">{{ acc.chargebox_id }}</span>{% endif %}</div>
+    <div>{% if acc.public_status %}status no mapa público: <span class="state-{{ norm_state(acc.public_status) }} font-semibold">{{ acc.public_status }}</span> · {% endif %}
+      {% if acc.listed_by %}listada no app pela conta <b class="text-on-surface">{{ acc.listed_by.account }}</b> (tenant {{ acc.listed_by.tenant or "?" }}, ativa={{ acc.listed_by.active }}, cobra={{ acc.listed_by.has_payment }}) em {{ acc.listed_by.fetched_at|dt }}
+      {% else %}<b class="text-on-surface">não aparece</b> na lista do app de nenhuma conta configurada{% endif %}</div>
+  </div>
+  {% if acc.action %}<div class="flex items-start gap-2 rounded-lg px-3 py-2 font-body-md text-body-md {% if acc.reason in ('ok', 'migrada') %}bg-surface-container text-on-surface-variant{% else %}bg-tertiary-container/15 text-tertiary{% endif %}"><span class="material-symbols-outlined text-[18px] shrink-0">{% if acc.reason in ('ok', 'migrada') %}info{% else %}warning{% endif %}</span><span>{{ acc.action }}</span></div>{% endif %}
+  {% if pl.last_error %}<div class="rounded-lg bg-error-container/15 px-2.5 py-1.5 font-body-sm text-body-sm text-error">última sincronização: {{ pl.last_error }}</div>{% endif %}
+  {% if pl.missing_key %}<div class="flex items-center gap-2 rounded-lg bg-tertiary-container/15 p-2.5 text-tertiary font-body-sm text-body-sm"><span class="material-symbols-outlined text-[18px]">key_off</span><span>Falta a Api-Key da(s) conta(s) {% for a in pl.missing_key %}<b>{{ a.name }}</b>{% if not loop.last %}, {% endif %}{% endfor %} — sem ela o sincronizador não usa a conta. É preciso extrair a chave do app correspondente (tráfego/APK).</span></div>{% endif %}
+</section>
+
+{% if acc.alternatives %}
+<div class="flex items-baseline justify-between px-0.5 mb-2"><span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Alternativas até 300 m</span><span class="font-body-sm text-body-sm text-secondary">com preço em outra fonte</span></div>
+<div class="flex flex-col gap-2 mb-3">
+{% for a in acc.alternatives %}
+<a class="card-low flex flex-col gap-space-sm" href="/station/{{ a.id }}">
+  <div class="flex items-start justify-between gap-2">
+    <div class="min-w-0"><span class="font-display text-headline-md text-on-surface truncate block">{{ a.name }}</span><span class="font-body-sm text-body-sm text-on-surface-variant">{{ a.dist_m|num }} m · {{ a.source }} · {{ a.power_kw|num }} kW</span></div>
+    {% set k = norm_state(a.state) %}<span class="pill-{{ 'ok' if k == 'available' else 'warn' if k == 'busy' else 'bad' if k == 'down' else 'muted' }} shrink-0"><span class="dot"></span>{{ a.state or "?" }}</span>
+  </div>
+  <div class="flex items-baseline justify-between rounded-lg bg-surface-container px-3 py-2"><span class="font-body-sm text-body-sm text-on-surface-variant">preço vigente</span><span class="font-display text-price-display-mobile text-primary tabular-nums">{{ a.price_kwh|brl }}<span class="font-body text-body-sm font-normal text-on-surface-variant">/kWh</span></span></div>
+</a>
+{% endfor %}
+</div>
+{% endif %}
+
+<div class="flex items-center justify-between px-0.5 mb-2"><span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Contas da plataforma {{ pl.name }}</span><a class="font-label-sm text-label-sm text-primary" href="/operadores/{{ pl.slug }}">todas as contas</a></div>
+<div class="flex flex-col gap-2 mb-3">
 {% for a in pl.accounts %}
-<div class="card" style="padding:10px 14px">
-  <div class="row"><div class="grow"><b>{{ a.name }}</b> <span class="muted">({{ a.slug }} · {{ "página" if a.origin == "db" else ".env" }})</span></div>
-    <span class="chip">{% if not a.configured %}sem login{% elif not a.api_key_known %}sem Api-Key{% elif a.last_error %}erro{% elif a.last_success_at %}ok{% else %}aguardando{% endif %}</span></div>
-  <div class="muted">{{ a.email or "—" }} · {{ a.stations }} estações listadas{% if a.last_success_at %} · sincronizado {{ a.last_success_at|dt }}{% endif %}{% if a.note %} · {{ a.note }}{% endif %}</div>
-  {% if a.last_error %}<div class="fee-bad">{{ a.last_error }}</div>{% endif %}
+<div class="card-low !p-space-sm flex flex-col gap-1">
+  <div class="flex items-center justify-between gap-2"><span class="font-label-md text-label-md text-on-surface font-semibold">{{ a.name }} <span class="text-outline font-normal">({{ a.slug }} · {{ "página" if a.origin == "db" else ".env" }})</span></span>
+    {% if not a.configured %}<span class="pill-warn">sem login</span>{% elif not a.api_key_known %}<span class="pill-warn">sem Api-Key</span>{% elif a.last_error %}<span class="pill-bad">erro</span>{% elif a.last_success_at %}<span class="pill-ok">ok</span>{% else %}<span class="pill-info">aguardando</span>{% endif %}</div>
+  <div class="font-body-sm text-body-sm text-on-surface-variant">{{ a.email or "—" }} · {{ a.stations }} estações listadas{% if a.last_success_at %} · sincronizado {{ a.last_success_at|dt }}{% endif %}{% if a.note %} · {{ a.note }}{% endif %}</div>
+  {% if a.last_error %}<div class="font-body-sm text-body-sm text-error">{{ a.last_error }}</div>{% endif %}
 </div>
 {% endfor %}
-
-{% if acc.reason == 'migrada' %}
-<details><summary class="muted">Mesmo assim, cadastrar uma conta da plataforma</summary>
-{% elif not pl.configured %}
-<h2>Informar o login</h2>
-{% else %}
-<h2>Cadastrar outra conta (app da marca)</h2>
-<p class="muted">Os apps BUENO, Green-V, Ecofortte… usam a mesma API da On-Charge, cada um com a sua <b>Api-Key</b> (tenant) e a sua conta.
-  Se você usa o app da marca desta estação, informe o login dele; a Api-Key, se souber. Sem a chave a conta fica cadastrada como
-  "falta a Api-Key" para lembrar de pesquisar.</p>
-{% endif %}
-<div class="card">
-<form class="cred" method="post" action="/station/{{ st.id }}/acesso" autocomplete="off">
-  <input type="hidden" name="platform" value="{{ pl.slug }}">
-  {% if pl.configured %}
-  <div><label>conta (identificador curto; use um existente para atualizar)</label><input type="text" name="slug" value="{{ suggested.slug }}" placeholder="gsol" required></div>
-  <div><label>nome do app/marca</label><input type="text" name="name" value="{{ suggested.name }}" placeholder="GSOL (app)"></div>
-  {% else %}
-  <input type="hidden" name="slug" value="oncharge"><input type="hidden" name="name" value="On-Charge (app)">
-  {% endif %}
-  <div><label>e-mail da conta</label><input type="email" name="email" required autocomplete="username"></div>
-  <div><label>senha</label><input type="password" name="password" autocomplete="current-password" placeholder="em branco = manter a gravada"></div>
-  <div><label>Api-Key do app {% if not pl.configured %}(vazio = padrão da On-Charge){% else %}(vazio = desconhecida, fica marcado para pesquisar){% endif %}</label><input type="text" name="api_key" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
-  <div class="actions"><button class="btn" type="submit">Salvar</button><a class="btn ghost" href="/operadores/{{ pl.slug }}">todas as contas</a></div>
-</form>
 </div>
-{% if acc.reason == 'migrada' %}</details>{% endif %}
 
+<section class="card-low flex flex-col gap-space-sm">
+  {% if acc.reason == 'migrada' %}
+  <button class="flex items-center gap-2 text-on-surface-variant font-label-md text-label-md" type="button" data-toggle="acc-form"><span class="material-symbols-outlined text-[18px]">expand_more</span>Mesmo assim, cadastrar uma conta da plataforma</button>
+  {% elif not pl.configured %}<h2 class="font-display text-headline-md text-on-surface">Informar o login</h2>
+  {% else %}<h2 class="font-display text-headline-md text-on-surface">Cadastrar outra conta (app da marca)</h2>
+  <p class="font-body-sm text-body-sm text-on-surface-variant">Os apps BUENO, Green-V, Ecofortte… usam a mesma API da On-Charge, cada um com a sua <b>Api-Key</b> (tenant) e a sua conta. Se você usa o app da marca desta estação, informe o login dele; a Api-Key, se souber. Sem a chave a conta fica cadastrada como "falta a Api-Key".</p>{% endif %}
+  <form class="flex flex-col gap-space-sm" method="post" action="/station/{{ st.id }}/acesso" autocomplete="off" id="acc-form" {% if acc.reason == 'migrada' %}hidden{% endif %}>
+    <input type="hidden" name="platform" value="{{ pl.slug }}">
+    {% if pl.configured %}
+    <div class="grid grid-cols-2 gap-2">
+      <div class="field"><label>conta (identificador; use um existente para atualizar)</label><input class="input" type="text" name="slug" value="{{ suggested.slug }}" placeholder="gsol" required></div>
+      <div class="field"><label>nome do app/marca</label><input class="input" type="text" name="name" value="{{ suggested.name }}" placeholder="GSOL (app)"></div>
+    </div>
+    {% else %}<input type="hidden" name="slug" value="oncharge"><input type="hidden" name="name" value="On-Charge (app)">{% endif %}
+    <div class="field"><label>e-mail da conta</label><input class="input" type="email" name="email" required autocomplete="username"></div>
+    <div class="field"><label>senha do app</label><input class="input" type="password" name="password" autocomplete="current-password" placeholder="em branco = manter a gravada"></div>
+    <div class="field"><label>Api-Key do app {% if not pl.configured %}(vazio = padrão da On-Charge){% else %}(vazio = desconhecida, fica marcado para pesquisar){% endif %}</label><input class="input font-mono" type="text" name="api_key" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
+    <button class="btn-primary w-full h-12" type="submit"><span class="material-symbols-outlined text-[20px]">save</span>Salvar — o próximo ciclo ({{ pl.interval_min|num }} min) usa a conta</button>
+    <span class="font-body-sm text-body-sm text-outline text-center">nada é chamado agora: o sincronizador consulta a API sozinho, em horário fixo</span>
+  </form>
+</section>
 {% if cached %}
-<details><summary class="muted">JSON bruto da estação no app</summary><pre class="tbl" style="font-size:12px">{{ cached|tojson(indent=1) }}</pre></details>
+<details class="card-low mt-3">
+  <summary class="flex items-center justify-between cursor-pointer"><span class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant"><span class="material-symbols-outlined text-[20px] text-outline">code</span>JSON bruto da estação no app</span><span class="material-symbols-outlined text-[20px] text-outline">expand_more</span></summary>
+  <pre class="mt-2 rounded-lg bg-surface-container-lowest p-space-sm overflow-x-auto text-[11px] font-mono text-on-surface-variant leading-relaxed">{{ cached|tojson(indent=1) }}</pre>
+</details>
 {% endif %}
 {% endblock %}
+{% block scripts %}<script>
+document.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', () => { const p = document.getElementById(b.dataset.toggle); p.hidden = !p.hidden; }));
+</script>{% endblock %}

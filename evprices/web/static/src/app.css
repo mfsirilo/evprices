@@ -1,0 +1,164 @@
+/* Fonte do CSS do evprices. Compilar com tools/build-css.sh (Tailwind CLI standalone) -> ../app.css (versionado). */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------- fontes locais (PWA offline: nada de CDN) ---------- */
+/* Geist (corpo/labels) e Space Grotesk (títulos/preços): subconjuntos latin + latin-ext do Google Fonts */
+@font-face { font-family: 'Geist'; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url(/static/fonts/geist-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'Geist'; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url(/static/fonts/geist-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 500 700; font-display: swap;
+  src: url(/static/fonts/space-grotesk-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 500 700; font-display: swap;
+  src: url(/static/fonts/space-grotesk-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+/* Material Symbols Outlined: subconjunto com só os ícones usados nos templates (tools/build-icons.sh) */
+@font-face { font-family: 'Material Symbols Outlined'; font-style: normal; font-weight: 100 700; font-display: block;
+  src: url(/static/fonts/material-symbols.woff2) format('woff2'); }
+/* ---------- tokens de cor (Material 3, seed azul). RGB sem vírgula para o Tailwind aplicar opacidade ---------- */
+/* claro = padrão; escuro = preferência do sistema (salvo data-theme="light") ou data-theme="dark" */
+:root {
+  --background: 248 249 255; --on-background: 25 28 34;
+  --surface: 248 249 255; --surface-dim: 216 218 225; --surface-bright: 248 249 255; --surface-variant: 223 226 240;
+  --on-surface: 25 28 34; --on-surface-variant: 63 72 80;
+  --surface-container-lowest: 255 255 255; --surface-container-low: 242 243 251; --surface-container: 236 238 245;
+  --surface-container-high: 230 232 239; --surface-container-highest: 224 226 234;
+  --inverse-surface: 46 48 56; --inverse-on-surface: 239 240 247; --inverse-primary: 147 204 255; --surface-tint: 0 99 152;
+  --outline: 111 120 127; --outline-variant: 191 199 210;
+  --primary: 0 99 152; --on-primary: 255 255 255; --primary-container: 204 229 255; --on-primary-container: 0 29 49;
+  --primary-fixed: 204 229 255; --primary-fixed-dim: 147 204 255; --on-primary-fixed: 0 29 49; --on-primary-fixed-variant: 0 75 115;
+  --secondary: 0 110 44; --on-secondary: 255 255 255; --secondary-container: 127 252 151; --on-secondary-container: 0 33 9;
+  --secondary-fixed: 127 252 151; --secondary-fixed-dim: 98 223 125; --on-secondary-fixed: 0 33 9; --on-secondary-fixed-variant: 0 83 32;
+  --tertiary: 138 79 0; --on-tertiary: 255 255 255; --tertiary-container: 255 220 195; --on-tertiary-container: 47 21 0;
+  --tertiary-fixed: 255 220 195; --tertiary-fixed-dim: 255 183 125; --on-tertiary-fixed: 47 21 0; --on-tertiary-fixed-variant: 110 57 0;
+  --error: 186 26 26; --on-error: 255 255 255; --error-container: 255 218 214; --on-error-container: 65 0 2;
+  /* gráfico */
+  --s1: 42 120 214; --s2: 235 104 52; --s3: 27 175 122; --home: 111 120 127; --home2: 160 166 172;
+  color-scheme: light;
+}
+:root[data-theme="dark"], :root.dark-tokens { color-scheme: dark; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --background: 11 19 38; --on-background: 218 226 253;
+  --surface: 11 19 38; --surface-dim: 11 19 38; --surface-bright: 49 57 77; --surface-variant: 45 52 73;
+  --on-surface: 218 226 253; --on-surface-variant: 191 199 210;
+  --surface-container-lowest: 6 14 32; --surface-container-low: 19 27 46; --surface-container: 23 31 51;
+  --surface-container-high: 34 42 61; --surface-container-highest: 45 52 73;
+  --inverse-surface: 218 226 253; --inverse-on-surface: 40 48 68; --inverse-primary: 0 99 152; --surface-tint: 147 204 255;
+  --outline: 137 146 155; --outline-variant: 63 72 80;
+  --primary: 147 204 255; --on-primary: 0 51 81; --primary-container: 49 152 220; --on-primary-container: 0 44 71;
+  --primary-fixed: 204 229 255; --primary-fixed-dim: 147 204 255; --on-primary-fixed: 0 29 49; --on-primary-fixed-variant: 0 75 115;
+  --secondary: 98 223 125; --on-secondary: 0 57 20; --secondary-container: 28 166 77; --on-secondary-container: 0 49 17;
+  --secondary-fixed: 127 252 151; --secondary-fixed-dim: 98 223 125; --on-secondary-fixed: 0 33 9; --on-secondary-fixed-variant: 0 83 32;
+  --tertiary: 255 183 125; --on-tertiary: 77 38 0; --tertiary-container: 217 119 7; --on-tertiary-container: 67 33 0;
+  --tertiary-fixed: 255 220 195; --tertiary-fixed-dim: 255 183 125; --on-tertiary-fixed: 47 21 0; --on-tertiary-fixed-variant: 110 57 0;
+  --error: 255 180 171; --on-error: 105 0 5; --error-container: 147 0 10; --on-error-container: 255 218 214;
+  --s1: 57 135 229; --s2: 217 89 38; --s3: 25 158 112; --home: 137 146 155; --home2: 94 93 88;
+  color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --background: 11 19 38; --on-background: 218 226 253;
+  --surface: 11 19 38; --surface-dim: 11 19 38; --surface-bright: 49 57 77; --surface-variant: 45 52 73;
+  --on-surface: 218 226 253; --on-surface-variant: 191 199 210;
+  --surface-container-lowest: 6 14 32; --surface-container-low: 19 27 46; --surface-container: 23 31 51;
+  --surface-container-high: 34 42 61; --surface-container-highest: 45 52 73;
+  --inverse-surface: 218 226 253; --inverse-on-surface: 40 48 68; --inverse-primary: 0 99 152; --surface-tint: 147 204 255;
+  --outline: 137 146 155; --outline-variant: 63 72 80;
+  --primary: 147 204 255; --on-primary: 0 51 81; --primary-container: 49 152 220; --on-primary-container: 0 44 71;
+  --primary-fixed: 204 229 255; --primary-fixed-dim: 147 204 255; --on-primary-fixed: 0 29 49; --on-primary-fixed-variant: 0 75 115;
+  --secondary: 98 223 125; --on-secondary: 0 57 20; --secondary-container: 28 166 77; --on-secondary-container: 0 49 17;
+  --secondary-fixed: 127 252 151; --secondary-fixed-dim: 98 223 125; --on-secondary-fixed: 0 33 9; --on-secondary-fixed-variant: 0 83 32;
+  --tertiary: 255 183 125; --on-tertiary: 77 38 0; --tertiary-container: 217 119 7; --on-tertiary-container: 67 33 0;
+  --tertiary-fixed: 255 220 195; --tertiary-fixed-dim: 255 183 125; --on-tertiary-fixed: 47 21 0; --on-tertiary-fixed-variant: 110 57 0;
+  --error: 255 180 171; --on-error: 105 0 5; --error-container: 147 0 10; --on-error-container: 255 218 214;
+  --s1: 57 135 229; --s2: 217 89 38; --s3: 25 158 112; --home: 137 146 155; --home2: 94 93 88;
+  color-scheme: dark;
+}
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+  body { @apply bg-surface text-on-surface font-body text-body-md antialiased; overscroll-behavior-y: none; }
+  ::-webkit-scrollbar { display: none; }
+  * { scrollbar-width: none; }
+  a { color: inherit; text-decoration: none; }
+  input, select, textarea, button { font: inherit; color: inherit; }
+  input[type=number] { -moz-appearance: textfield; }
+  input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  summary { list-style: none; } summary::-webkit-details-marker { display: none; }
+  [hidden] { display: none !important; }   /* vence .flex/.grid dos utilitários */
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+}
+
+@layer components {
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined'; font-weight: normal; font-style: normal; font-size: 24px; line-height: 1;
+  letter-spacing: normal; text-transform: none; display: inline-block; white-space: nowrap; word-wrap: normal;
+  direction: ltr; -webkit-font-feature-settings: 'liga'; font-feature-settings: 'liga'; -webkit-font-smoothing: antialiased;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; flex: none; user-select: none;
+}
+.material-symbols-outlined.fill { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  /* blocos que se repetem em muitos templates */
+  .card { @apply bg-surface-container rounded-xl p-space-md shadow-sm; }
+  .card-low { @apply bg-surface-container-low rounded-xl p-space-md shadow-sm; }
+  .btn { @apply inline-flex items-center justify-center gap-1.5 h-11 px-4 rounded-lg font-label-md text-label-md font-semibold transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none; }
+  .btn-primary { @apply btn bg-primary text-on-primary shadow-sm; }
+  .btn-ghost { @apply btn bg-surface-container-high text-on-surface; }
+  .btn-sm { @apply h-9 px-3; }
+  .btn-danger { @apply btn bg-surface-container-high text-error; }
+  .field { @apply flex flex-col gap-1; }
+  .field label { @apply font-label-md text-label-md text-on-surface-variant; }
+  .input { @apply w-full h-11 px-3 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-body-md outline-none border border-transparent focus:border-primary transition-colors placeholder:text-outline; }
+  .input.derived { @apply text-secondary border-dashed border-outline-variant; }
+  .pill { @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-label-sm text-label-sm font-bold whitespace-nowrap; }
+  .pill-ok { @apply pill bg-secondary/15 text-secondary; }
+  .pill-warn { @apply pill bg-tertiary-container/25 text-tertiary; }
+  .pill-bad { @apply pill bg-error-container/40 text-error; }
+  .pill-muted { @apply pill bg-surface-container-highest text-on-surface-variant; }
+  .pill-info { @apply pill bg-primary-container/20 text-primary; }
+  .dot { @apply inline-block w-1.5 h-1.5 rounded-full bg-current; }
+  .chip { @apply inline-flex items-center px-2 py-0.5 rounded-md bg-surface-container-high font-label-sm text-label-sm text-on-surface font-medium; }
+  .kbd { @apply font-mono text-[12px] bg-surface-container-lowest px-1 py-0.5 rounded; }
+  .divider { @apply flex items-center gap-3 font-label-sm text-label-sm uppercase tracking-widest text-outline font-bold; }
+  .divider::before, .divider::after { content: ""; @apply flex-1 h-px bg-surface-variant; }
+  .spin { @apply inline-block w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin align-[-2px]; }
+  .muniwrap { @apply relative; }
+  .munilist { @apply absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-lg bg-surface-container-high shadow-lg; }
+  .muniopt { @apply px-3 py-2.5 cursor-pointer font-body-md text-body-md text-on-surface; }
+  .muniopt.active, .muniopt:hover { @apply bg-surface-container-highest; }
+  .muniopt .muted { @apply text-on-surface-variant; }
+  .sheet { @apply fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center; }
+  .sheet[hidden] { display: none; }
+  .sheet > .panel { @apply w-full max-w-md bg-surface-container rounded-t-2xl sm:rounded-2xl p-space-md flex flex-col gap-space-sm max-h-[88vh] overflow-y-auto; padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); }
+  .tab-btn { @apply flex flex-col items-center justify-center min-h-[44px] gap-0.5 text-on-surface-variant transition-colors font-label-sm text-label-sm; }
+  .tab-btn.active { @apply text-primary; }
+  .tab-btn.active .material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  .period-chip { @apply h-9 px-3 rounded-full bg-surface-container-high text-on-surface-variant font-label-md text-label-md whitespace-nowrap transition-colors; }
+  .period-chip.selected { @apply bg-primary text-on-primary font-bold; }
+  .bar { @apply h-2 w-full rounded-full bg-surface-container-highest overflow-hidden; }
+  .bar > i { @apply block h-full rounded-full bg-primary; }
+  table.tbl { @apply w-full text-left font-body-sm text-body-sm; }
+  table.tbl th { @apply py-2 px-2 font-label-sm text-label-sm text-outline uppercase tracking-wider font-semibold; }
+  table.tbl td { @apply py-2.5 px-2 align-top border-t border-surface-container-high/60; }
+  .r { @apply text-right whitespace-nowrap; }
+  .state-available { @apply text-secondary; } .state-busy { @apply text-tertiary; } .state-down { @apply text-error; }
+  /* gráfico de evolução (evochart.js) */
+  .evo svg { @apply block w-full; height: 120px; touch-action: pan-y; }
+  .evo text { font: 11px Geist, system-ui, sans-serif; fill: rgb(var(--on-surface-variant)); font-variant-numeric: tabular-nums; }
+  .evo text.end { fill: rgb(var(--on-surface)); font-weight: 600; }
+  .evo .grid { stroke: rgb(var(--outline-variant) / 0.5); } .evo .axis { stroke: rgb(var(--outline-variant)); }
+  .tip { @apply fixed z-50 pointer-events-none bg-surface-container-highest rounded-lg px-2.5 py-1.5 shadow-lg font-body-sm text-body-sm whitespace-nowrap; }
+  .tip b { font-variant-numeric: tabular-nums; }
+  .amen-tile { @apply flex flex-col items-center justify-center gap-1 rounded-lg p-3 min-h-[92px] text-center border border-dashed border-outline-variant bg-surface-container-low text-on-surface-variant transition-colors select-none; }
+  .amen-tile[data-state="1"] { @apply border-solid border-secondary bg-secondary-container/20 text-secondary; }
+  .amen-tile[data-state="0"] { @apply border-solid border-outline-variant bg-surface-container-highest text-on-surface; }
+  .amen-tile[data-state="0"] .material-symbols-outlined { @apply opacity-40; }
+  .amen-tile .state-lbl { @apply text-outline; }
+  .amen-tile[data-state="1"] .state-lbl { @apply text-secondary; }
+  .timeline { @apply relative; }
+  .timeline::before { content: ""; @apply absolute left-[15px] top-4 bottom-6 w-0.5 bg-outline-variant/60; }
+}

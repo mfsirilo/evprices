@@ -1,0 +1,6 @@
+{# Ícones de comodidades. Espera `am` (dict de amenities.for_stations) e opcional `compact` (só ícones). #}
+{% if am and am.yes %}
+<span class="inline-flex items-center gap-1 flex-wrap">
+  {% for k in am.yes %}<span class="inline-flex items-center gap-0.5 rounded-md bg-secondary-container/15 text-secondary px-1.5 py-0.5 font-label-sm text-label-sm" title="{{ AMENITY_KEYS[k][0] }}"><span class="material-symbols-outlined text-[14px]">{{ AMENITY_KEYS[k][1] }}</span>{% if not compact %}{{ AMENITY_KEYS[k][0] }}{% endif %}</span>{% endfor %}
+</span>
+{% endif %}

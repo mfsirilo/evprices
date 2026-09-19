@@ -1,49 +1,85 @@
 {% extends "base.html" %}
-{% block title %}evprices — viagens{% endblock %}
+{% block page_title %}Viagens{% endblock %}
 {% block content %}
-<p class="muted">Rota rodoviária entre dois municípios e o plano de paradas para recarga: onde parar, quanto carregar e quanto
-  custa, considerando preço, potência e estado das tomadas (última coleta) e a autonomia do
-  <a class="maplink" href="/veiculos">veículo</a>.</p>
-{% if err %}<div class="card fee-bad">⚠️ {{ err }}</div>{% endif %}
-
-<div class="card">
-  <form class="cred" method="post" action="/viagens" id="trip-form" autocomplete="off">
-    <div class="tripsel"><label>Origem</label>
-      <div class="muniwrap"><input id="o-q" data-muni="origin" placeholder="Município de origem… (ex.: goiânia ou goiania/go)" inputmode="search" autocomplete="off"><input type="hidden" name="origin" id="origin"></div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
-        <button class="btn ghost small" type="button" id="o-gps">📍 partir de onde estou</button><span class="muted" id="o-out"></span>
-      </div>
-    </div>
-    <div class="tripsel"><label>Destino</label>
-      <div class="muniwrap"><input id="d-q" data-muni="dest" placeholder="Município de destino…" inputmode="search" autocomplete="off"><input type="hidden" name="dest" id="dest"></div>
-    </div>
-    <input type="hidden" name="origin_lat" id="origin_lat"><input type="hidden" name="origin_lon" id="origin_lon">
-    <div class="actions"><button class="btn" type="submit" id="go" disabled>Calcular rota</button>
-      <span class="muted">a rota vem do OSRM; o plano é calculado com o que já está no banco</span></div>
-  </form>
+<div class="mb-3">
+  <h1 class="font-display text-headline-lg-mobile text-on-surface">Viagens</h1>
+  <p class="font-body-sm text-body-sm text-on-surface-variant">Rota rodoviária entre dois municípios e o plano de paradas: onde parar, quanto carregar e quanto custa, pelo preço, potência e estado das tomadas (última coleta) e a autonomia do <a class="text-primary" href="/veiculos">veículo</a>.</p>
 </div>
+{% if err %}<div class="card-low mb-3 flex items-start gap-2 text-error"><span class="material-symbols-outlined text-[20px]">error</span><span class="font-body-sm text-body-sm">{{ err }}</span></div>{% endif %}
 
-<h2>Viagens salvas</h2>
+<section class="card flex flex-col gap-space-sm">
+  <div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary text-[20px]">alt_route</span><h2 class="font-display text-headline-md text-on-surface">Nova viagem</h2></div>
+  <form method="post" action="/viagens" id="trip-form" autocomplete="off" class="flex flex-col gap-space-sm">
+    <div class="field">
+      <div class="flex items-center justify-between"><label for="o-q">Origem</label>
+        <button class="flex items-center gap-1 text-primary font-label-sm text-label-sm font-semibold" type="button" id="o-gps"><span class="material-symbols-outlined text-[14px]">my_location</span>partir de onde estou</button></div>
+      <div class="muniwrap"><span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px] z-[1]">trip_origin</span>
+        <input id="o-q" class="input pl-10" data-muni="origin" placeholder="Município de origem… (ex.: goiânia ou goiania/go)" inputmode="search"><input type="hidden" name="origin" id="origin"></div>
+      <div class="font-body-sm text-body-sm text-secondary empty:hidden" id="o-out"></div>
+    </div>
+    <div class="flex justify-center -my-1"><button type="button" id="swap" class="w-8 h-8 rounded-full bg-surface-container-highest text-primary flex items-center justify-center" aria-label="inverter"><span class="material-symbols-outlined text-[18px]">swap_vert</span></button></div>
+    <div class="field"><label for="d-q">Destino</label>
+      <div class="muniwrap"><span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-[18px] z-[1]">location_on</span>
+        <input id="d-q" class="input pl-10" data-muni="dest" placeholder="Município de destino…" inputmode="search"><input type="hidden" name="dest" id="dest"></div></div>
+    <input type="hidden" name="origin_lat" id="origin_lat"><input type="hidden" name="origin_lon" id="origin_lon">
+    <button class="btn-primary w-full h-12" type="submit" id="go" disabled><span class="material-symbols-outlined text-[20px]">directions_car</span>Calcular rota</button>
+    <p class="font-body-sm text-body-sm text-outline flex items-start gap-1"><span class="material-symbols-outlined text-[16px] shrink-0">info</span>A rota vem do OSRM (uma chamada por viagem); o plano é calculado com as estações já coletadas a até {{ settings.trip_detour_km|num }} km da rota.</p>
+  </form>
+</section>
+
+<div class="flex items-center justify-between mt-5 mb-2 px-1">
+  <div class="flex items-center gap-2"><h2 class="font-display text-headline-md text-on-surface">Viagens salvas</h2><span class="pill-info">{{ trips|length }}</span></div>
+</div>
+<div class="flex flex-col gap-3">
 {% for t in trips %}
-<a class="card" href="/viagens/{{ t.id }}">
-  <div class="row"><div class="grow"><div class="name">{{ t.name }}</div>
-    <div class="muted">{{ (t.distance_m / 1000)|round(0)|int }} km · {{ (t.duration_s / 60)|hm }} de estrada · rota de {{ t.routed_at|dt }}</div></div>
-    <span class="chip">ver plano</span></div>
-</a>
+{% set ps = t.plan_summary %}
+<article class="card flex flex-col gap-2 relative">
+  <a class="absolute inset-0 rounded-xl" href="/viagens/{{ t.id }}" aria-label="{{ t.name }}"></a>
+  <div class="flex items-start justify-between gap-2">
+    <h3 class="font-display text-headline-md text-on-surface flex items-center gap-1.5 flex-wrap min-w-0">{{ t.name }}</h3>
+    <span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+  </div>
+  <div class="flex items-center gap-2 flex-wrap font-body-sm text-body-sm text-on-surface-variant">
+    <span class="flex items-center gap-1"><span class="material-symbols-outlined text-[15px]">straighten</span>{{ (t.distance_m / 1000)|round(0)|int }} km</span><span class="text-outline">·</span>
+    <span class="flex items-center gap-1"><span class="material-symbols-outlined text-[15px]">schedule</span>{{ (t.duration_s / 60)|hm }} de estrada</span><span class="text-outline">·</span>
+    <span>rota de {{ t.routed_at|dt }}</span>
+  </div>
+  {% if ps %}
+  <div class="flex items-center justify-between rounded-lg bg-surface-container-low px-3 py-2">
+    <div class="flex flex-col"><span class="font-label-md text-label-md text-on-surface font-semibold">{% if ps.ok %}{{ ps.stops }} parada(s){% else %}sem plano viável{% endif %}</span><span class="font-body-sm text-body-sm text-on-surface-variant">{% if ps.ok %}{{ ps.kwh|num }} kWh · chegada com {{ ps.arrive_soc }} %{% else %}ajuste os parâmetros{% endif %} · calculado {{ ps.at|ago }}</span></div>
+    {% if ps.ok %}<span class="font-display text-telemetry-metric text-secondary tabular-nums">~{{ ps.money|brl }}</span>{% endif %}
+  </div>
+  {% endif %}
+</article>
 {% else %}
-<div class="card muted">nenhuma viagem ainda.</div>
+<div class="card flex flex-col items-center text-center gap-2 py-8">
+  <span class="material-symbols-outlined text-[40px] text-outline">luggage</span>
+  <div class="font-display text-headline-md text-on-surface">Nenhuma viagem ainda</div>
+  <div class="font-body-sm text-body-sm text-on-surface-variant">Escolha origem e destino acima.</div>
+</div>
 {% endfor %}
-<p><a class="btn ghost" href="/veiculos">🚗 veículos</a></p>
-
+</div>
+{% set dv = vehicles|selectattr("is_default")|first %}
+<a class="mt-4 flex items-center justify-between p-space-sm rounded-xl bg-surface-container-low hover:bg-surface-container" href="/veiculos">
+  <div class="flex items-center gap-space-sm min-w-0">
+    <div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-primary shrink-0"><span class="material-symbols-outlined text-[20px]">electric_car</span></div>
+    <div class="flex flex-col truncate"><span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Veículo padrão</span>
+      <span class="font-body-md text-body-md text-on-surface font-semibold truncate">{% if dv %}{{ dv.name }} ({{ dv.battery_kwh|num }} kWh · {{ dv.full_range_km|round(0)|int }} km){% else %}nenhum cadastrado{% endif %}</span></div>
+  </div>
+  <span class="flex items-center gap-1 text-primary font-label-sm text-label-sm font-semibold shrink-0">Veículos<span class="material-symbols-outlined text-[16px]">tune</span></span>
+</a>
 <script src="/static/munisearch.js"></script>
 <script>
 (function () {
   const go = document.getElementById('go'), origin = document.getElementById('origin'), dest = document.getElementById('dest'),
-        oq = document.getElementById('o-q'), out = document.getElementById('o-out');
+        oq = document.getElementById('o-q'), dq = document.getElementById('d-q'), out = document.getElementById('o-out');
   function check() { go.disabled = !(origin.value && dest.value); }
   document.addEventListener('muniselect', check); document.addEventListener('munichange', check);
-  // digitar outra origem descarta a posição do GPS
   oq.addEventListener('input', () => { document.getElementById('origin_lat').value = ''; document.getElementById('origin_lon').value = ''; out.textContent = ''; });
+  document.getElementById('swap').addEventListener('click', () => {
+    const a = [oq.value, origin.value]; oq.value = dq.value; origin.value = dest.value; dq.value = a[0]; dest.value = a[1];
+    document.getElementById('origin_lat').value = ''; document.getElementById('origin_lon').value = ''; out.textContent = ''; check();
+  });
   document.getElementById('o-gps').addEventListener('click', () => {
     if (!navigator.geolocation || !window.isSecureContext) { out.textContent = 'GPS só em HTTPS (ou localhost).'; return; }
     out.innerHTML = '<span class="spin"></span> localizando…';

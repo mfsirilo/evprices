@@ -1,70 +1,100 @@
 {% extends "base.html" %}
-{% block title %}evprices — operadores{% endblock %}
+{% block page_title %}Operadores{% endblock %}
 {% block content %}
-<p class="muted">Plataformas cujo app exige conta. Informe o login <b>uma vez</b> por conta: ele vale para todas as estações que
-  aquele app enxerga. A consulta roda sozinha no collector em horário fixo (nunca ao abrir uma tela); as páginas mostram a última coleta gravada.</p>
-{% if ok %}<div class="card ok-msg">✔ {{ ok }}. O próximo ciclo do sincronizador usa a conta.</div>{% endif %}
+<div class="flex items-center justify-between gap-2 mb-1">
+  <div class="flex items-center gap-2"><h1 class="font-display text-headline-lg-mobile text-on-surface">Operadores</h1><span class="pill-info"><span class="material-symbols-outlined text-[13px]">lock</span>área do dono</span></div>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-3">Plataformas cujo app exige conta. Informe o login <b>uma vez</b> por conta: ele vale para todas as estações que aquele app enxerga. A consulta roda sozinha no coletor em horário fixo — nunca ao abrir uma tela; as páginas mostram a última coleta gravada.</p>
+{% if ok %}<div class="card-low mb-3 flex items-start gap-2 text-secondary"><span class="material-symbols-outlined text-[20px]">check_circle</span><span class="font-body-sm text-body-sm">{{ ok }}. O próximo ciclo do sincronizador usa a conta.</span></div>{% endif %}
+
+{% macro acct_form(o, a) %}
+<form class="flex flex-col gap-space-sm" method="post" action="/operadores/{{ o.slug }}" autocomplete="off">
+  {% if a %}<input type="hidden" name="slug" value="{{ a.slug }}">
+  <div class="field"><label>nome do app/marca</label><input class="input" type="text" name="name" value="{{ a.name }}"></div>
+  {% else %}
+  <div class="grid grid-cols-2 gap-2">
+    <div class="field"><label>identificador (curto, sem espaço)</label><input class="input" type="text" name="slug" placeholder="gsol" required></div>
+    <div class="field"><label>nome do app/marca</label><input class="input" type="text" name="name" placeholder="GSOL (app)"></div>
+  </div>{% endif %}
+  <div class="grid grid-cols-2 gap-2">
+    <div class="field"><label>e-mail da conta</label><input class="input" type="email" name="email" value="{{ a.email if a else '' }}" required autocomplete="username"></div>
+    <div class="field"><label>senha</label><input class="input" type="password" name="password" autocomplete="{{ 'current-password' if a else 'new-password' }}" placeholder="{{ 'gravada — digite para trocar' if a and a.configured else '' }}" {% if not (a and a.configured) %}required{% endif %}></div>
+  </div>
+  <div class="field"><label>Api-Key do app {% if a and a.api_key_default %}(vazio = padrão da On-Charge){% elif a and a.api_key_known %}(gravada — digite para trocar){% elif a %}(desconhecida — pesquisar){% else %}(vazio = desconhecida, fica marcado para pesquisar){% endif %}</label>
+    <input class="input font-mono" type="text" name="api_key" placeholder="{{ 'padrão do .env / código' if a and a.slug == 'oncharge' else 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' }}" autocomplete="off"></div>
+  <div class="flex items-center gap-2 pt-1">
+    <button class="btn-primary flex-1" type="submit" name="action" value="save"><span class="material-symbols-outlined text-[18px]">save</span>{{ "Salvar" if a else "Adicionar" }}</button>
+    {% if a and a.origin == "db" %}<button class="btn-danger" type="submit" name="action" value="delete" formnovalidate onclick="return confirm('Remover a conta {{ a.slug }}?')"><span class="material-symbols-outlined text-[18px]">delete</span>Remover</button>{% endif %}
+  </div>
+  {% if a and a.slug == "oncharge" %}<span class="font-body-sm text-body-sm text-outline">ou no .env: {{ o.env_email }} / {{ o.env_password }}</span>{% endif %}
+</form>
+{% endmacro %}
 
 {% for o in ops.values() %}
-<div class="card" id="{{ o.slug }}" {% if focus == o.slug %}style="border-color:var(--accent)"{% endif %}>
-  <div class="row"><div class="grow"><div class="name">{{ o.name }}</div><div class="muted">{{ o.apps }}</div></div>
-    <span class="chip">{% if o.configured %}{{ o.accounts|selectattr("usable")|list|length }} conta(s){% else %}sem login{% endif %}</span></div>
-  <div class="muted" style="margin:8px 0">
-    {% if not o.configured %}Sem conta utilizável: as estações entram pelo mapa público, <b>sem preço</b>.
-    {% elif o.waiting_first %}<span class="spin"></span> Aguardando a primeira coleta (a cada {{ o.interval_min|num }} min).
-    {% else %}A cada {{ o.interval_min|num }} min · última coleta <b>{{ o.last_success_at|dt }}</b> · {{ o.cached_stations }} estações no cache
-      {% if o.last_attempt_at and o.last_attempt_at != o.last_success_at %} · última tentativa {{ o.last_attempt_at|dt }}{% endif %}
-    {% endif %}
-    {% if o.missing_key %}<div class="fee-bad">🔎 Falta a Api-Key de: {% for a in o.missing_key %}<b>{{ a.name }}</b>{% if not loop.last %}, {% endif %}{% endfor %} — pesquisar a chave embutida no app.</div>{% endif %}
+<section class="card-low flex flex-col gap-space-md mb-3 relative overflow-hidden {% if focus == o.slug %}ring-1 ring-primary{% endif %}" id="{{ o.slug }}">
+  <div class="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-primary via-primary-container to-transparent"></div>
+  <div class="flex flex-col gap-1">
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      <div class="flex items-center gap-2"><span class="font-display text-headline-md text-on-surface whitespace-nowrap">{{ o.name }}</span><span class="chip shrink-0 whitespace-nowrap">{{ o.accounts|selectattr("usable")|list|length }} conta(s)</span></div>
+      {% if not o.configured %}<span class="pill-warn"><span class="dot"></span>sem login</span>
+      {% elif o.waiting_first %}<span class="pill-info"><span class="spin !w-3 !h-3"></span>aguardando 1ª coleta</span>
+      {% elif o.last_error %}<span class="pill-bad"><span class="dot"></span>erro</span>
+      {% else %}<span class="pill-ok"><span class="dot"></span>sincronizador ativo</span>{% endif %}
+    </div>
+    <div class="font-body-sm text-body-sm text-on-surface-variant">{{ o.apps }}</div>
+    <div class="flex flex-wrap items-center gap-x-2 gap-y-1 font-body-sm text-body-sm text-on-surface-variant">
+      <span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">autorenew</span>a cada {{ o.interval_min|num }} min</span>
+      {% if o.configured and not o.waiting_first %}<span class="text-outline-variant">·</span><span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">schedule</span>última {{ o.last_success_at|dt }}</span><span class="text-outline-variant">·</span><span class="text-primary font-medium">{{ o.cached_stations }} estações no cache</span>{% endif %}
+      {% if o.last_attempt_at and o.last_attempt_at != o.last_success_at %}<span class="text-outline-variant">·</span><span>última tentativa {{ o.last_attempt_at|dt }}</span>{% endif %}
+    </div>
+    {% if not o.configured %}<div class="font-body-sm text-body-sm text-tertiary">Sem conta utilizável: as estações entram pelo mapa público, <b>sem preço</b>.</div>{% endif %}
   </div>
+  {% if o.missing_key %}<div class="flex items-center gap-2 rounded-lg bg-tertiary-container/15 p-2.5 text-tertiary font-body-sm text-body-sm"><span class="material-symbols-outlined text-[18px]">key_off</span><span><b class="text-on-surface">Falta a Api-Key de:</b> {% for a in o.missing_key %}<b>{{ a.name }}</b>{% if not loop.last %}, {% endif %}{% endfor %} — pesquisar a chave embutida no app.</span></div>{% endif %}
 
-  {% for a in o.accounts %}
-  <details class="card" style="padding:10px 14px" id="acct-{{ a.slug }}" {% if focus == a.slug or (focus == o.slug and loop.first) %}open{% endif %}>
-    <summary style="cursor:pointer">
-      <b>{{ a.name }}</b> <span class="muted">({{ a.slug }} · {{ "página" if a.origin == "db" else ".env" }}) · {{ a.email or "sem e-mail" }}</span>
-      <span class="chip">{% if not a.configured %}sem login{% elif not a.api_key_known %}sem Api-Key{% elif a.last_error %}erro{% elif a.last_success_at %}ok{% else %}aguardando{% endif %}</span>
-    </summary>
-    <div class="muted" style="margin:6px 0">{{ a.stations }} estações listadas{% if a.last_success_at %} · sincronizado {{ a.last_success_at|dt }}{% endif %}
-      · token {{ "guardado" if a.token else "ausente (fará login no próximo ciclo)" }}{% if a.note %} · {{ a.note }}{% endif %}
-      {% if a.last_error %}<div class="fee-bad">⚠️ {{ a.last_error }}</div>{% endif %}</div>
-    <form class="cred" method="post" action="/operadores/{{ o.slug }}" autocomplete="off">
-      <input type="hidden" name="slug" value="{{ a.slug }}">
-      <div><label>nome</label><input type="text" name="name" value="{{ a.name }}"></div>
-      <div><label>e-mail da conta</label><input type="email" name="email" value="{{ a.email }}" required autocomplete="username"></div>
-      <div><label>senha</label><input type="password" name="password" autocomplete="current-password" placeholder="{{ 'gravada — digite para trocar' if a.configured else '' }}" {% if not a.configured %}required{% endif %}></div>
-      <div><label>Api-Key do app {% if a.api_key_default %}(vazio = padrão da On-Charge){% elif a.api_key_known %}(gravada — digite para trocar){% else %}(DESCONHECIDA — pesquisar){% endif %}</label>
-        <input type="text" name="api_key" placeholder="{{ 'padrão do .env / código' if a.slug == 'oncharge' else 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' }}" autocomplete="off"></div>
-      <div class="actions">
-        <button class="btn" type="submit" name="action" value="save">Salvar</button>
-        {% if a.origin == "db" %}<button class="btn ghost" type="submit" name="action" value="delete" formnovalidate onclick="return confirm('Remover a conta {{ a.slug }}?')">Remover</button>{% endif %}
-        {% if a.slug == "oncharge" %}<span class="muted">ou no .env: {{ o.env_email }} / {{ o.env_password }}</span>{% endif %}
+  <div class="flex flex-col gap-space-sm">
+    <div class="flex items-center justify-between px-0.5"><span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Contas</span></div>
+    {% for a in o.accounts %}
+    <div class="card flex flex-col gap-space-sm !p-space-sm" id="acct-{{ a.slug }}">
+      <div class="flex items-start justify-between gap-2">
+        <div class="flex flex-col min-w-0"><div class="flex items-center gap-1.5"><span class="font-label-md text-label-md text-on-surface font-semibold truncate">{{ a.name }}</span><span class="chip !py-0">{{ "página" if a.origin == "db" else ".env" }}</span></div>
+          <span class="font-mono font-body-sm text-body-sm text-outline truncate">{{ a.slug }} · {{ a.email or "sem e-mail" }}</span></div>
+        {% if not a.configured %}<span class="pill-warn shrink-0">sem login</span>{% elif not a.api_key_known %}<span class="pill-warn shrink-0"><span class="material-symbols-outlined text-[13px]">key_off</span>falta Api-Key</span>{% elif a.last_error %}<span class="pill-bad shrink-0">erro</span>{% elif a.last_success_at %}<span class="pill-ok shrink-0"><span class="material-symbols-outlined text-[13px]">check</span>conectada</span>{% else %}<span class="pill-info shrink-0">aguardando</span>{% endif %}
       </div>
-    </form>
-  </details>
-  {% endfor %}
-
-  <details class="card" style="padding:10px 14px" {% if not o.accounts %}open{% endif %}>
-    <summary style="cursor:pointer"><b>+ adicionar conta</b> <span class="muted">(app de outra marca da plataforma: GSOL, BUENO…)</span></summary>
-    <p class="muted">Cada app white-label usa a mesma API com <b>Api-Key própria</b> e só enxerga as estações do seu tenant. Sem a chave, a conta fica
-      registrada como "falta a Api-Key" para lembrar de pesquisar.</p>
-    <form class="cred" method="post" action="/operadores/{{ o.slug }}" autocomplete="off">
-      <div><label>identificador (curto, sem espaço)</label><input type="text" name="slug" placeholder="gsol" required></div>
-      <div><label>nome do app/marca</label><input type="text" name="name" placeholder="GSOL (app)"></div>
-      <div><label>e-mail da conta</label><input type="email" name="email" required autocomplete="username"></div>
-      <div><label>senha</label><input type="password" name="password" required autocomplete="new-password"></div>
-      <div><label>Api-Key do app (vazio = desconhecida)</label><input type="text" name="api_key" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off"></div>
-      <div class="actions"><button class="btn" type="submit" name="action" value="save">Adicionar</button></div>
-    </form>
-  </details>
-</div>
+      <div class="grid grid-cols-2 gap-2 rounded-lg bg-surface-container-low p-2 font-body-sm text-body-sm">
+        <div class="flex flex-col min-w-0"><span class="font-label-sm text-label-sm text-outline uppercase">estações listadas</span><span class="text-primary font-medium tabular-nums">{{ a.stations }}</span></div>
+        <div class="flex flex-col min-w-0"><span class="font-label-sm text-label-sm text-outline uppercase">sincronizado</span><span class="text-on-surface">{{ a.last_success_at|dt if a.last_success_at else "ainda não" }}</span></div>
+      </div>
+      <div class="flex items-center justify-between gap-2 font-body-sm text-body-sm">
+        <span class="font-label-sm text-label-sm {% if a.token %}text-secondary{% else %}text-outline{% endif %}">token {{ "guardado" if a.token else "ausente (fará login no próximo ciclo)" }}{% if a.note %} · {{ a.note }}{% endif %}</span>
+        <button class="btn-ghost btn-sm" type="button" data-toggle="af-{{ a.slug }}"><span class="material-symbols-outlined text-[14px]">tune</span>Editar</button>
+      </div>
+      {% if a.last_error %}<div class="rounded-lg bg-error-container/15 px-2.5 py-1.5 font-body-sm text-body-sm text-error break-words">{{ a.last_error }}</div>{% endif %}
+      <div id="af-{{ a.slug }}" {% if not (focus == a.slug) %}hidden{% endif %}>{{ acct_form(o, a) }}</div>
+    </div>
+    {% endfor %}
+    <div class="card !p-space-sm flex flex-col gap-space-sm">
+      <button class="flex items-center gap-2 text-primary font-label-md text-label-md font-semibold" type="button" data-toggle="af-new-{{ o.slug }}"><span class="material-symbols-outlined text-[18px]">add_circle</span>Adicionar conta (app de outra marca: GSOL, BUENO…)</button>
+      <div id="af-new-{{ o.slug }}" {% if o.accounts %}hidden{% endif %}>
+        <p class="font-body-sm text-body-sm text-on-surface-variant mb-2">Cada app white-label usa a mesma API com <b>Api-Key própria</b> e só enxerga as estações do seu tenant. Sem a chave, a conta fica registrada como "falta a Api-Key" para lembrar de pesquisar.</p>
+        {{ acct_form(o, none) }}
+      </div>
+    </div>
+  </div>
+</section>
 {% endfor %}
 
-<h2>Ainda sem cliente (falta a chave do app)</h2>
-<p class="muted">Plataformas que também exigem conta ou API key embutida no app. Para integrar, é preciso descobrir a chave
-  (engenharia reversa do APK/tráfego) — enquanto isso as estações delas não entram.</p>
-<div class="card tbl"><table>
-  <tr><th>Plataforma</th><th>Apps</th><th>O que falta</th></tr>
-  {% for p in pending %}<tr><td><b>{{ p.name }}</b></td><td>{{ p.apps }}</td><td class="fee-bad">{{ p.api_key_note }}</td></tr>{% endfor %}
-</table></div>
-<p><a class="btn ghost" href="/" data-back>← voltar</a></p>
+<div class="flex items-center justify-between px-0.5 mb-2"><span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-outline text-[18px]">build_circle</span><span class="font-label-md text-label-md text-on-surface font-semibold">Ainda sem cliente</span></span><span class="font-label-sm text-label-sm text-outline">falta a chave do app</span></div>
+<section class="card-low !p-0 overflow-hidden flex flex-col divide-y divide-surface-container-high/60 mb-3">
+  {% for p in pending %}
+  <div class="p-space-sm flex flex-col gap-1">
+    <div class="flex items-center justify-between gap-2"><span class="font-label-md text-label-md text-on-surface font-semibold">{{ p.name }}</span><span class="pill-warn"><span class="material-symbols-outlined text-[13px]">key_off</span>sem chave</span></div>
+    <div class="font-body-sm text-body-sm text-tertiary">{{ p.api_key_note }}</div>
+    <div class="font-body-sm text-body-sm text-on-surface-variant"><span class="text-outline">apps:</span> {{ p.apps }}</div>
+  </div>
+  {% endfor %}
+</section>
+<p class="flex items-start gap-2 rounded-lg bg-surface-container-lowest p-space-sm font-body-sm text-body-sm text-on-surface-variant"><span class="material-symbols-outlined text-[16px] shrink-0">lock</span>As credenciais ficam no banco local do coletor e nunca são enviadas a terceiros além do próprio app da plataforma.</p>
 {% endblock %}
+{% block scripts %}<script>
+document.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', () => { const p = document.getElementById(b.dataset.toggle); p.hidden = !p.hidden; }));
+</script>{% endblock %}

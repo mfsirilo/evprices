@@ -1,46 +1,52 @@
 {% extends "base.html" %}
-{% block title %}evprices — evolução{% if mun %} · {{ mun.nome }}/{{ mun.uf }}{% endif %}{% endblock %}
+{% block page_title %}Evolução{% if mun %} · {{ mun.nome }}/{{ mun.uf }}{% endif %}{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/static/evochart.css">
-
 {% if not mun %}
-<div class="card">Escolha um município na <a href="/"><b>página de preços</b></a> para ver a evolução.</div>
+<div class="card flex flex-col items-center text-center gap-2 py-8">
+  <span class="material-symbols-outlined text-[40px] text-outline">trending_up</span>
+  <div class="font-display text-headline-md text-on-surface">Escolha um município</div>
+  <div class="font-body-sm text-body-sm text-on-surface-variant">A evolução mostra o histórico de preço de cada estação do município escolhido na <a class="text-primary" href="/">página de preços</a>.</div>
+</div>
 {% else %}
-<div class="card">
-  <div class="munbar">
-    <div class="grow"><div class="name">{{ mun.nome }}/{{ mun.uf }}</div>
-      <div class="muted">Evolução do R$/kWh (preço da janela padrão) de cada estação, tomadas acima de {{ settings.min_power_kw|num }} kW.
-        Cada degrau é uma versão de tarifa observada pelas coletas.</div></div>
-    <a class="btn ghost small" href="/?m={{ mun.id }}">← preços</a>
+<div class="flex items-center justify-between gap-2 mb-2">
+  <a class="btn-ghost btn-sm rounded-full" href="/?m={{ mun.id }}"><span class="material-symbols-outlined text-[18px] text-primary">arrow_back</span>Preços</a>
+</div>
+<div class="flex items-start justify-between gap-2 mb-3">
+  <div class="min-w-0">
+    <div class="flex items-center gap-1.5"><span class="material-symbols-outlined text-primary text-[20px]">location_on</span><h1 class="font-display text-headline-lg-mobile text-on-surface truncate">{{ mun.nome }}/{{ mun.uf }}</h1></div>
+    <p class="font-body-sm text-body-sm text-on-surface-variant">Preço por kWh (janela padrão) de cada estação, tomadas acima de {{ settings.min_power_kw|num }} kW. Cada degrau é uma versão de tarifa vista pelas coletas.</p>
   </div>
 </div>
 
 {% if not stations %}
-<div class="card muted">Nenhuma estação com preço em R$/kWh neste município ainda.</div>
-{% else %}
-{% set trange_action = "/evolucao" %}{% include "_trange.html" %}
-
-<div class="toolbar">
-  <label><input type="checkbox" id="shared-y" checked> mesma escala de preço em todos</label>
-  <label><input type="checkbox" id="from-zero"> eixo a partir de R$ 0</label>
-  {% if home %}<label><input type="checkbox" id="show-home" checked> casa · convencional</label>
-  {% if home.series|length > 1 %}<label><input type="checkbox" id="show-home2"> casa · branca fora ponta</label>{% endif %}{% endif %}
-  <span class="muted" id="range"></span>
+<div class="card flex flex-col items-center text-center gap-2 py-8">
+  <span class="material-symbols-outlined text-[40px] text-outline">ev_station</span>
+  <div class="font-display text-headline-md text-on-surface">Nenhuma estação com preço em R$/kWh</div>
+  <div class="font-body-sm text-body-sm text-on-surface-variant">Ainda não há tarifa por kWh registrada em {{ mun.nome }}/{{ mun.uf }}.</div>
 </div>
-{% if home %}
-<p class="muted" style="margin:-4px 0 10px">
-  🏠 <b>Em casa</b> (linha cinza; 🌙 = branca fora de ponta) = tarifa residencial ANEEL da {{ home.distribuidora }} (TUSD+TE) + bandeira do mês + ICMS {{ home.uf }} {{ home.icms_pct|num }}% + PIS/COFINS {% if home.piscofins_source == 'aproximado' %}≈{{ home.piscofins_pct|num }}% (aproximado){% else %}{{ home.piscofins_pct|num }}% (publicado pela distribuidora, mês a mês){% endif %}, por dentro.
-</p>
-{% elif mun and not mun.distribuidora %}
-<p class="muted">Sem referência de casa: distribuidora deste município não identificada.</p>
+{% else %}
+<section class="card flex flex-col gap-2.5">
+  {% set trange_action = "/evolucao" %}{% include "_trange.html" %}
+  <div class="flex flex-col gap-1.5 font-body-sm text-body-sm text-on-surface">
+    <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="shared-y" class="accent-primary" checked>Mesma escala de preço em todos os gráficos</label>
+    <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="from-zero" class="accent-primary">Eixo a partir de R$ 0,00</label>
+    {% if home %}
+    <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="show-home" class="accent-primary" checked><span class="material-symbols-outlined text-[15px] text-tertiary">home</span>Referência em casa · convencional ({{ home.series[0].points[-1].price_kwh|brl }}/kWh)</label>
+    {% if home.series|length > 1 %}<label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="show-home2" class="accent-primary"><span class="material-symbols-outlined text-[15px] text-outline">dark_mode</span>Branca fora de ponta ({{ home.series[1].points[-1].price_kwh|brl }}/kWh)</label>{% endif %}
+    {% endif %}
+  </div>
+  {% if home %}
+  <p class="font-label-sm text-label-sm text-outline">Casa = tarifa residencial ANEEL da {{ home.distribuidora }} (TUSD+TE) + bandeira do mês + ICMS {{ home.uf }} {{ home.icms_pct|num }} % + PIS/COFINS {% if home.piscofins_source == 'aproximado' %}≈{{ home.piscofins_pct|num }} % (aproximado){% else %}{{ home.piscofins_pct|num }} % (publicado pela distribuidora){% endif %}, por dentro.</p>
+  {% elif not mun.distribuidora %}
+  <p class="font-label-sm text-label-sm text-outline">Sem referência de casa: distribuidora deste município não identificada.</p>
+  {% endif %}
+  <div class="font-label-sm text-label-sm text-tertiary empty:hidden" id="range"></div>
+</section>
+<div class="grid grid-cols-1 gap-3 md:grid-cols-2 mt-3" id="panels"></div>
 {% endif %}
-<div class="grid" id="panels"></div>
 {% endif %}
-{% endif %}
-
 <script id="data" type="application/json">{{ stations|tojson }}</script>
 <script id="home" type="application/json">{{ (home.series if home else [])|tojson }}</script>
 <script id="rng" type="application/json">{{ {"start": rng.start, "end": rng.end}|tojson if rng else {}|tojson }}</script>
-<script src="/static/evochart.js"></script>
-<script>evoChart();</script>
 {% endblock %}
+{% block scripts %}<script src="/static/evochart.js"></script><script>evoChart();</script>{% endblock %}

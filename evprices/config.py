@@ -67,6 +67,14 @@ class Settings:
     trip_hour_value: float = field(default_factory=lambda: float(_env("TRIP_HOUR_VALUE", "20")))    # R$ por hora parado/desviando
     trip_stop_overhead_min: float = field(default_factory=lambda: float(_env("TRIP_STOP_OVERHEAD_MIN", "6")))
 
+    # Área do dono (Operadores, Coletas, Acessos): login simples. Sem ADMIN_USER/ADMIN_PASSWORD a área fica fechada.
+    admin_user: str = field(default_factory=lambda: _env("ADMIN_USER"))
+    admin_password: str = field(default_factory=lambda: _env("ADMIN_PASSWORD"))
+    secret_key: str = field(default_factory=lambda: _env("SECRET_KEY"))   # vazio = gerada uma vez e guardada em kv
+    # Base geo-IP local (MaxMind GeoLite2-City ou DB-IP Lite, .mmdb) para "de onde" em /admin/acessos; opcional.
+    # Com o túnel Cloudflare, ligue "Managed Transforms → Add visitor location headers" e a base não é necessária.
+    geoip_db: str = field(default_factory=lambda: _env("GEOIP_DB"))
+
     default_kwh: float = field(default_factory=lambda: float(_env("DEFAULT_KWH", "30")))
     default_charge_min: float = field(default_factory=lambda: float(_env("DEFAULT_CHARGE_MIN", "40")))
     default_idle_min: float = field(default_factory=lambda: float(_env("DEFAULT_IDLE_MIN", "10")))

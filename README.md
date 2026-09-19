@@ -156,6 +156,47 @@ O ranking e o gráfico mostram quanto custa o kWh **na sua casa**, para comparar
 - Atualização automática a cada `HOME_REFRESH_HOURS` (padrão semanal) ou `python -m evprices.run load-home`.
 - 3 municípios ficam sem referência (cooperativas sem tarifa publicada: IENERGIA, CERAL).
 
+## Cenário pelo veículo e comodidades
+
+- **Cenário do ranking** sai do carro cadastrado (`/veiculos`): escolha o veículo e "de X % até Y %"; kWh = bateria útil ×
+  faixa + 5 % de perda, e os **minutos são por tomada** (potência da tomada limitada ao DC máx. do carro; acima de
+  80 % a 40 %), o que muda o total nas tarifas por minuto. Sem escolha, vale o veículo padrão de 20 → 80 %. O modo
+  manual (kWh + minutos) continua na mesma folha. Parâmetros: `?v=ID&soc_from=20&soc_to=80&idle_min=10` ou
+  `?v=&kwh=30&charge_min=40&idle_min=10`; a última escolha fica em cookie.
+- **Comodidades** (wifi, banheiro, café/restaurante, mercado, vaga coberta, 24 h) não vêm de nenhuma fonte de preço —
+  só a Bow publica (`amenity_links`, importado na leitura). Qualquer usuário informa na página da estação ("Informar",
+  sim / não / não sei por item, rede e senha do Wi-Fi, observação); fica em `station_amenity` e aparece no card, na
+  estação e nas paradas/candidatas da viagem. "Não sei" não apaga o que outra pessoa informou.
+
+## Interface (design system e CSS)
+
+A UI é server-rendered (Jinja2) com **Tailwind compilado de antemão** — nada de Node no runtime nem CDN:
+
+- Tokens (paleta Material 3 clara/escura, tipografia Space Grotesk + Geist, raios, espaçamentos) em
+  `evprices/web/static/src/app.css` e `tailwind.config.js`; tema segue o sistema, com escolha manual na folha "Mais".
+- `tools/build-css.sh` baixa o Tailwind CLI standalone (binário único, ignorado pelo git) e gera
+  `evprices/web/static/app.css`, que **é versionado**: mudou um template, rode o script e comite o CSS.
+- Ícones: Material Symbols em subconjunto (`tools/build-icons.sh` lê os nomes usados nos templates — ícone montado por
+  variável precisa estar num comentário `{# icons: ... #}` — e baixa o woff2 com só eles). Fontes em `static/fonts/`,
+  servidas localmente para o PWA funcionar offline.
+- Componentes compartilhados: `_station_card.html`, `_states.html`, `_brand.html`, `_scenario.html` (cenário + folha),
+  `_trange.html` (período por chips), `_picker.html` (município), `_operator_link.html` (pill 🔑).
+
+## Área do dono (login)
+
+`ADMIN_USER`/`ADMIN_PASSWORD` no `.env` habilitam a área logada (folha "Mais → Área do dono"): **Operadores**
+(contas dos apps), **Coletas** (log), **Acessos** e o botão **parar de monitorar** um município. A parte pública
+(preços, estação, viagens, evolução, favoritas, veículos, municípios, monitorar/coletar agora) continua sem login.
+Cookie assinado com `SECRET_KEY` (vazio = chave gerada uma vez e guardada em `kv`); "manter conectado" = 30 dias.
+
+**Acessos** (`/admin/acessos`): quantos visitantes estão ativos agora (últimos 5 min, com página atual, aparelho e
+app instalado ou navegador), acessos por hora/dia/semana com totais, únicos e pico, e de onde vieram (localidade,
+origem direto/PWA/link externo, dispositivo, navegador, páginas). Cada página HTML servida grava uma linha em
+`access_log` (rotas `/api/*`, `/static` e o próprio dono ficam fora dos totais). A localidade vem dos cabeçalhos
+`CF-IPCity`/`CF-IPCountry`/`CF-Region-Code` — no painel do Cloudflare, ligue **Rules → Settings → Managed Transforms
+→ Add visitor location headers** (grátis); sem isso só o país aparece. Alternativa sem túnel: `GEOIP_DB` apontando
+para uma base `.mmdb` (MaxMind GeoLite2-City ou DB-IP Lite), lida com `maxminddb`.
+
 ## Instalar no celular (PWA)
 
 Abra a URL **HTTPS** do túnel Cloudflare no celular e toque em **📲 Instalar** na barra: no Android/Chrome ele abre o
@@ -195,18 +236,19 @@ docker compose exec db psql -U evprices -d evprices                    # SQL dir
 | `/evolucao?m=ID&from=now-7d&to=now` | gráfico: um painel por estação com a evolução do R$/kWh em degraus; período estilo Zabbix (`now-30d`, `now/M`, `now-1M/M`, `2026-09-01 14:00`; unidades m h d w M y), com períodos rápidos e última escolha lembrada |
 | `/favoritas` | estações marcadas com ★ (de todos os municípios) pelo custo do cenário; `/?fav=1` filtra o ranking |
 | `/municipios` | municípios monitorados, estado da coleta, parar/retomar |
-| `/operadores` · `/operadores/{platform}` | contas por plataforma (On-Charge) + estado do sincronizador; `POST` grava/remove conta |
-| `/station/{id}/acesso` | por que a estação está sem preço + informar login / cadastrar conta do app da marca (`POST`) |
+| `/operadores` · `/operadores/{platform}` | (dono) contas por plataforma (On-Charge) + estado do sincronizador; `POST` grava/remove conta |
+| `/admin/login` · `/admin/logout` · `/admin/acessos` | área do dono: login simples e a tela de acessos (`?p=24h|7d|30d|3m|1a`); `/admin/acessos/agora` JSON |
+| `/station/{id}/acesso` | (dono) por que a estação está sem preço + informar login / cadastrar conta do app da marca (`POST`) |
 | `/api/operators` | JSON do estado dos operadores (sem segredos) |
 | `/station/{id}` | tomadas da estação + histórico de tarifas; endereço abre o app de mapas (Google/Apple) e botão de rotas |
-| `/runs` | log das coletas (por município e fonte) |
+| `/runs` | (dono) log das coletas (por município e fonte), `?f=running|changes|error` |
 | `/viagens` · `/viagens/{id}` | viagens salvas + nova (`POST`); plano de paradas (`?v=&soc=&soc_min=&soc_max=&kwh100=&hv=&depart=&detour=&unpriced=&busy=&assumed=`); `POST …/corredor` (coletar), `…/rota` (recalcular), `…/excluir` |
 | `/veiculos` | veículos (bateria, consumo, DC máx., plugues, reserva/teto); `POST` grava/remove |
 | `/api/trip/{id}/plan` · `/api/trip/{id}/route` | plano em JSON (mesmos parâmetros) · rota em GeoJSON |
 | `/api/ufs`, `/api/municipios?q=rio%20verde/go` | busca para o seletor (`q` = começo do nome, opcionalmente "nome/UF"; `uf=` filtra) |
 | `/api/municipio/locate?lat=&lon=` | GPS → município |
 | `/api/favorites` · `POST /api/station/{id}/favorite` | lista / alterna favorita (uma lista só, sem usuário) |
-| `/api/municipio/{id}` · `POST …/select` · `POST …/unmonitor` | estado / monitorar + coletar agora / parar |
+| `/api/municipio/{id}` · `POST …/select` · `POST …/unmonitor` | estado / monitorar + coletar agora / parar (só o dono) |
 | `/api/evolution?municipio=ID` | JSON das séries de R$/kWh por estação + série "casa" (o que alimenta `/evolucao`) |
 | `/api/prices?municipio=ID` | JSON da view `current_prices` + custo estimado (para Home Assistant/Grafana) |
 | `/api/history/{connector_id}` | JSON do histórico de uma tomada |

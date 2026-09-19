@@ -1,15 +1,29 @@
-{# Seletor de município: digita o nome (ou "nome/UF") e escolhe na lista; ou GPS. #}
-<div class="card" id="picker">
-  <div class="muted" style="margin-bottom:8px">Digite o município para levantar os carregadores pagos acima de {{ settings.min_power_kw|num }} kW.</div>
+{# Seletor de município: busca por digitação (nome ou "nome/UF"), lista dos monitorados e GPS. Espera `monitored` (opcional). #}
+<div class="flex flex-col gap-space-sm" id="picker">
   <div class="muniwrap">
-    <input id="picker-q" data-muni="picker-id" placeholder="Município… (ex.: rio verde ou rio verde/go)" autocomplete="off" inputmode="search">
+    <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px] pointer-events-none z-[1]">search</span>
+    <input id="picker-q" class="input pl-10" data-muni="picker-id" placeholder="Município… (ex.: rio verde ou rio verde/go)" autocomplete="off" inputmode="search">
     <input type="hidden" id="picker-id">
   </div>
-  <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-    <button class="btn" id="picker-go" type="button" disabled>Selecionar</button>
-    <button class="btn ghost" id="picker-gps" type="button">📍 Usar minha localização</button>
+  <div class="flex gap-2">
+    <button class="btn-primary flex-1" id="picker-go" type="button" disabled>Selecionar</button>
+    <button class="btn-ghost flex-1" id="picker-gps" type="button"><span class="material-symbols-outlined text-[18px] text-tertiary">my_location</span>Minha localização</button>
   </div>
-  <div id="locate-result" class="muted"></div>
+  <div id="locate-result" class="font-body-sm text-body-sm text-on-surface-variant empty:hidden"></div>
+  {% if monitored %}
+  <div class="flex flex-col gap-1 mt-1">
+    <span class="font-label-sm text-label-sm uppercase tracking-wider text-outline font-bold">Municípios monitorados</span>
+    {% for r in monitored[:8] %}
+    <button type="button" class="flex items-center justify-between p-2.5 rounded-lg hover:bg-surface-container-high text-left {% if mun and mun.id == r.id %}bg-surface-container-high{% endif %}" data-pick="{{ r.id }}">
+      <span><span class="font-body-md text-body-md font-semibold text-on-surface">{{ r.nome }}/{{ r.uf }}</span>
+        <span class="block font-body-sm text-body-sm text-outline">{{ r.stations }} estações{% if r.last_collected_at %} · coletado {{ r.last_collected_at|ago }}{% endif %}</span></span>
+      {% if mun and mun.id == r.id %}<span class="material-symbols-outlined text-secondary text-[20px]">check</span>{% endif %}
+    </button>
+    {% endfor %}
+    {% if monitored|length > 8 %}<a class="font-label-sm text-label-sm text-primary px-2.5 py-1" href="/municipios">todos os {{ monitored|length }} municípios monitorados →</a>{% endif %}
+  </div>
+  {% endif %}
+  <div class="font-body-sm text-body-sm text-outline">Escolher um município passa a monitorá-lo: a primeira coleta leva de segundos a ~1 min e depois se repete a cada {{ settings.collect_interval_hours|num }} h.</div>
 </div>
 <script src="/static/munisearch.js"></script>
 <script>
@@ -26,6 +40,7 @@
   q.addEventListener('munichange', () => { go.disabled = !hid.value; });
   q.addEventListener('keydown', e => { if (e.key === 'Enter' && hid.value && !q.nextElementSibling.querySelector('.active')) select(hid.value); });
   go.addEventListener('click', () => { if (hid.value) select(hid.value); });
+  document.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => { location.href = '/?m=' + b.dataset.pick; }));
   gps.addEventListener('click', () => {
     if (!navigator.geolocation) { out.textContent = 'este navegador não tem geolocalização.'; return; }
     if (!window.isSecureContext) { out.textContent = 'o navegador só libera o GPS em HTTPS (ou localhost). Escolha pela lista.'; return; }
@@ -35,7 +50,7 @@
       const r = await fetch(`/api/municipio/locate?lat=${lat}&lon=${lon}`);
       if (!r.ok) { out.textContent = 'não achei um município para sua posição.'; return; }
       const m = await r.json();
-      out.innerHTML = `Você está em <b>${m.nome}/${m.uf}</b> · <button class="btn small" type="button" id="gps-go">Selecionar</button>`;
+      out.innerHTML = `Você está em <b class="text-on-surface">${m.nome}/${m.uf}</b> · <button class="btn-primary btn-sm" type="button" id="gps-go">Selecionar</button>`;
       document.getElementById('gps-go').addEventListener('click', () => select(m.id));
     }, err => { out.textContent = 'GPS negado ou indisponível (' + err.message + ').'; }, {enableHighAccuracy: false, timeout: 15000, maximumAge: 300000});
   });

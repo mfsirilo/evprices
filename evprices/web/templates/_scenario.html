@@ -1,0 +1,70 @@
+{# Cenário (pelo veículo cadastrado ou manual) + folha de edição. Espera `sc`, `action`, `vehicles`; opcional `mun`, `fav`. #}
+{% set veh = sc.vehicle if sc.v else none %}
+{% set qs = ("v=" ~ sc.v ~ "&soc_from=" ~ sc.soc_from ~ "&soc_to=" ~ sc.soc_to) if veh else ("kwh=" ~ sc.kwh|num ~ "&charge_min=" ~ sc.charge_min|num) %}
+{% set qs = qs ~ "&idle_min=" ~ sc.idle_min|num %}
+<div class="card-low flex flex-col gap-2">
+  <div class="flex items-center justify-between gap-2">
+    <div class="flex items-center gap-2 min-w-0">
+      <div class="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-primary shrink-0"><span class="material-symbols-outlined text-[18px]">{% if veh %}electric_car{% else %}tune{% endif %}</span></div>
+      <div class="flex flex-col min-w-0">
+        <span class="font-label-sm text-label-sm uppercase tracking-wider text-outline">Cenário de recarga</span>
+        <span class="font-body-sm text-body-sm font-semibold text-on-surface truncate">{% if veh %}{{ veh.name }} · {{ sc.soc_from }} → {{ sc.soc_to }} % ≈ {{ sc.kwh|num }} kWh · {{ sc.idle_min|num }} min ocioso{% else %}{{ sc.kwh|num }} kWh · {{ sc.charge_min|num }} min carregando · {{ sc.idle_min|num }} min ocioso{% endif %}</span>
+      </div>
+    </div>
+    <button class="btn-ghost btn-sm text-primary shrink-0" type="button" data-open="sheet-scenario">Editar</button>
+  </div>
+  <div class="flex items-center justify-between gap-2 font-body-sm text-body-sm text-outline">
+    <span>{% if veh %}tempo por tomada (DC máx. {{ veh.max_dc_kw|num }} kW){% else %}ranking pelo custo total{% endif %} · tomadas &gt; {{ settings.min_power_kw|num }} kW</span>
+    {% if mun %}
+    <div class="inline-flex p-0.5 bg-surface-container-lowest rounded-full font-label-sm text-label-sm shrink-0">
+      <a href="/?m={{ mun.id }}&{{ qs }}&fav=0" class="px-2.5 py-0.5 rounded-full {% if not fav %}bg-surface-container text-primary font-semibold{% else %}text-on-surface-variant{% endif %}">Todas</a>
+      <a href="/?m={{ mun.id }}&{{ qs }}&fav=1" class="px-2.5 py-0.5 rounded-full flex items-center gap-0.5 {% if fav %}bg-surface-container text-tertiary font-semibold{% else %}text-on-surface-variant{% endif %}"><span class="material-symbols-outlined text-[13px]">star</span>só favoritas</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+<div class="sheet" id="sheet-scenario" hidden>
+  <form class="panel" method="get" action="{{ action }}" id="scenario-form">
+    {% if mun %}<input type="hidden" name="m" value="{{ mun.id }}">{% endif %}{% if fav %}<input type="hidden" name="fav" value="1">{% endif %}
+    <div class="flex items-center justify-between">
+      <span class="font-display text-headline-md text-on-surface flex items-center gap-2"><span class="material-symbols-outlined text-primary">tune</span>Ajustar cenário</span>
+      <button type="button" class="w-9 h-9 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface-variant" data-close aria-label="fechar"><span class="material-symbols-outlined text-[20px]">close</span></button>
+    </div>
+    <div class="field"><label>veículo</label>
+      <select class="input" name="v" id="sc-v">
+        {% for x in vehicles %}<option value="{{ x.id }}" data-batt="{{ x.battery_kwh }}" data-dc="{{ x.max_dc_kw|num }}" {% if veh and x.id == veh.id %}selected{% endif %}>{{ x.name }} · {{ x.battery_kwh|num }} kWh · DC {{ x.max_dc_kw|num }} kW</option>{% endfor %}
+        <option value="" {% if not veh %}selected{% endif %}>informar kWh e minutos à mão</option>
+      </select></div>
+    <div class="grid grid-cols-3 gap-2" id="sc-veh">
+      <div class="field"><label>de (% bateria)</label><input class="input" type="number" name="soc_from" inputmode="numeric" min="0" max="99" step="1" value="{{ sc.soc_from if veh else 20 }}"></div>
+      <div class="field"><label>até (%)</label><input class="input" type="number" name="soc_to" inputmode="numeric" min="1" max="100" step="1" value="{{ sc.soc_to if veh else 80 }}"></div>
+      <div class="field"><label>≈ kWh</label><div class="input flex items-center bg-surface-container-low text-on-surface-variant" id="sc-kwh-out">{{ sc.kwh|num if veh else '' }}</div></div>
+    </div>
+    <div class="grid grid-cols-2 gap-2" id="sc-manual">
+      <div class="field"><label>kWh</label><input class="input" type="number" name="kwh" inputmode="decimal" step="0.5" min="0" value="{{ sc.kwh|num if not veh else '' }}"></div>
+      <div class="field"><label>min carregando</label><input class="input" type="number" name="charge_min" inputmode="numeric" step="1" min="0" value="{{ sc.charge_min|num if not veh else '' }}"></div>
+    </div>
+    <div class="field"><label>min ocioso (depois de cheio, ainda na vaga)</label><input class="input" type="number" name="idle_min" inputmode="numeric" step="1" min="0" value="{{ sc.idle_min|num }}"></div>
+    <p class="font-body-sm text-body-sm text-outline" id="sc-hint"></p>
+    <button class="btn-primary w-full mt-1" type="submit">Aplicar</button>
+  </form>
+</div>
+<script>
+(function () {
+  const f = document.getElementById('scenario-form'), v = document.getElementById('sc-v'), out = document.getElementById('sc-kwh-out'), hint = document.getElementById('sc-hint');
+  const q = n => f.querySelector('[name=' + n + ']');
+  function upd() {
+    const o = v.selectedOptions[0], byCar = !!v.value;
+    document.getElementById('sc-veh').hidden = !byCar; document.getElementById('sc-manual').hidden = byCar;
+    q('soc_from').disabled = q('soc_to').disabled = !byCar; q('kwh').disabled = q('charge_min').disabled = byCar;
+    if (byCar) {
+      const b = parseFloat(o.dataset.batt), a = +q('soc_from').value || 0, z = +q('soc_to').value || 0;
+      const kwh = Math.max(0, b * (z - a) / 100 * 1.05);
+      out.textContent = kwh.toLocaleString('pt-BR', {maximumFractionDigits: 1});
+      hint.textContent = 'kWh = bateria útil × faixa de bateria + 5 % de perda. Os minutos são calculados por tomada: potência da tomada limitada a ' + o.dataset.dc + ' kW (acima de 80 %, a 40 %).';
+    } else hint.textContent = 'O total de cada estação = energia + tempo + ociosidade + ativação para esta recarga.';
+    const k = q('kwh'); if (byCar) { k.dispatchEvent(new Event('input')); }
+  }
+  v.addEventListener('change', upd); ['soc_from', 'soc_to'].forEach(n => q(n).addEventListener('input', upd)); upd();
+})();
+</script>

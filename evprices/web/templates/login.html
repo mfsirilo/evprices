@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block page_title %}Área do dono{% endblock %}
+{% block content %}
+<a class="inline-flex items-center gap-1.5 btn-ghost btn-sm mb-4" href="/"><span class="material-symbols-outlined text-[18px]">arrow_back</span>Voltar para Preços</a>
+<div class="flex flex-col gap-1 mb-4">
+  <div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary text-[22px]">admin_panel_settings</span><h1 class="font-display text-headline-lg-mobile text-on-surface tracking-tight">Área do dono</h1></div>
+  <p class="font-body-md text-body-md text-on-surface-variant">Acesso restrito a Operadores (contas dos apps), Coletas (log) e Acessos (quem está usando o app).</p>
+</div>
+{% if err %}
+<div class="flex items-start gap-2.5 p-3 mb-3 rounded-lg bg-error-container/30 text-on-surface">
+  <span class="material-symbols-outlined text-[20px] text-error shrink-0 mt-0.5">error</span>
+  <div class="flex flex-col"><span class="font-label-md text-label-md text-error font-semibold">Não foi possível entrar</span><span class="font-body-sm text-body-sm text-on-surface-variant">{{ err }}</span></div>
+</div>
+{% endif %}
+<form class="card-low flex flex-col gap-space-md" method="post" action="/admin/login">
+  <input type="hidden" name="next" value="{{ next or '' }}">
+  <div class="field"><label for="username">Usuário</label>
+    <div class="relative flex items-center"><span class="material-symbols-outlined absolute left-3 text-outline text-[20px] pointer-events-none">person</span>
+      <input class="input pl-10 h-12" id="username" name="username" type="text" autocomplete="username" placeholder="ex.: admin" required autofocus></div></div>
+  <div class="field"><label for="password">Senha</label>
+    <div class="relative flex items-center"><span class="material-symbols-outlined absolute left-3 text-outline text-[20px] pointer-events-none">key</span>
+      <input class="input pl-10 pr-11 h-12" id="password" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+      <button aria-label="mostrar senha" class="absolute right-1 w-10 h-10 flex items-center justify-center text-outline" type="button" id="eye"><span class="material-symbols-outlined text-[20px]">visibility</span></button></div></div>
+  <label class="flex items-center gap-2 cursor-pointer select-none font-body-sm text-body-sm text-on-surface-variant"><input class="accent-primary w-5 h-5" type="checkbox" name="remember" value="1" checked>Manter conectado neste aparelho</label>
+  <button class="btn-primary w-full h-12 mt-1" type="submit"><span class="material-symbols-outlined text-[20px]">login</span>Entrar</button>
+</form>
+<p class="flex items-start gap-2 mt-4 p-3 rounded-lg bg-surface-container-lowest font-body-sm text-body-sm text-on-surface-variant"><span class="material-symbols-outlined text-[18px] text-outline shrink-0">info</span>{% if not configured %}Defina ADMIN_USER e ADMIN_PASSWORD no .env e reinicie o app para habilitar a área do dono. {% endif %}Esta área não afeta a consulta pública de preços e estações.</p>
+<script>document.getElementById('eye').addEventListener('click', () => { const p = document.getElementById('password'); p.type = p.type === 'password' ? 'text' : 'password'; });</script>
+{% endblock %}

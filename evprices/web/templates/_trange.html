@@ -1,63 +1,35 @@
-{# Seletor de período estilo Zabbix. Espera `rng` (from, to, label, error) e `trange_action`. #}
-<div class="card trange">
-  <form method="get" action="{{ trange_action }}" id="trange">
+{# Período do gráfico: chips rápidos + personalizado (sintaxe now-7d / now/M / 2026-09-01 14:00). Espera `rng`, `trange_action`, opcional `mun`. #}
+{% set quick = [("now-12h","12 h"),("now-2d","2 d"),("now-7d","7 d"),("now-30d","30 d"),("now-3M","3 m"),("now-1y","1 a")] %}
+{% set cur = rng.from.strip() %}
+{% set isquick = rng.to.strip() == "now" and quick|selectattr(0, "equalto", cur)|list %}
+<div class="flex flex-col gap-2" id="trange">
+  <div class="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-margin px-margin">
+    {% for v, lbl in quick %}<a class="period-chip {% if isquick and cur == v %}selected{% endif %}" href="{{ trange_action }}?{% if mun %}m={{ mun.id }}&{% endif %}from={{ v }}&to=now">{{ lbl }}</a>{% endfor %}
+    <button type="button" class="period-chip flex items-center gap-1 {% if not isquick %}selected{% endif %}" data-open="sheet-trange">Personalizado<span class="material-symbols-outlined text-[16px]">calendar_month</span></button>
+  </div>
+  <div class="font-body-sm text-body-sm text-on-surface-variant">{% if rng.error %}<span class="text-tertiary">{{ rng.error }} — usando as últimas 12 horas.</span> {% endif %}Período: <b class="text-on-surface">{{ rng.label }}</b></div>
+</div>
+<div class="sheet" id="sheet-trange" hidden>
+  <form class="panel" method="get" action="{{ trange_action }}">
     {% if mun %}<input type="hidden" name="m" value="{{ mun.id }}">{% endif %}
-    <label for="from">De</label><input type="text" id="from" name="from" value="{{ rng.from }}" autocomplete="off" spellcheck="false" class="{% if rng.error %}bad{% endif %}">
-    <label for="to">Para</label><input type="text" id="to" name="to" value="{{ rng.to }}" autocomplete="off" spellcheck="false" class="{% if rng.error %}bad{% endif %}">
-    <button class="btn small" type="submit">Aplicar</button>
-  </form>
-  <div class="now">{% if rng.error %}<span class="fee-bad">{{ rng.error }} — usando as últimas 12 horas.</span> {% endif %}Período: <b>{{ rng.label }}</b>
-    · aceita <code>1h</code>, <code>now-7d</code>, <code>now/M</code>, <code>now-1M/M</code> ou <code>2026-09-01 14:00</code> (unidades: m h d w M y)</div>
-  <details>
-    <summary>Períodos rápidos</summary>
-    <div class="quick">
-      <ul>
-        <li><a data-from="now-2d" data-to="now" href="#">Últimos 2 dias</a></li>
-        <li><a data-from="now-7d" data-to="now" href="#">Últimos 7 dias</a></li>
-        <li><a data-from="now-30d" data-to="now" href="#">Últimos 30 dias</a></li>
-        <li><a data-from="now-3M" data-to="now" href="#">Últimos 3 meses</a></li>
-        <li><a data-from="now-6M" data-to="now" href="#">Últimos 6 meses</a></li>
-        <li><a data-from="now-1y" data-to="now" href="#">Último 1 ano</a></li>
-        <li><a data-from="now-2y" data-to="now" href="#">Últimos 2 anos</a></li>
-      </ul>
-      <ul>
-        <li><a data-from="now-1d/d" data-to="now-1d/d" href="#">Ontem</a></li>
-        <li><a data-from="now-2d/d" data-to="now-2d/d" href="#">Anteontem</a></li>
-        <li><a data-from="now-1w/d" data-to="now-1w/d" href="#">Este dia na semana passada</a></li>
-        <li><a data-from="now-1w/w" data-to="now-1w/w" href="#">Semana anterior</a></li>
-        <li><a data-from="now-1M/M" data-to="now-1M/M" href="#">Mês anterior</a></li>
-        <li><a data-from="now-1y/y" data-to="now-1y/y" href="#">Ano anterior</a></li>
-      </ul>
-      <ul>
-        <li><a data-from="now/d" data-to="now/d" href="#">Hoje</a></li>
-        <li><a data-from="now/d" data-to="now" href="#">Até agora hoje</a></li>
-        <li><a data-from="now/w" data-to="now/w" href="#">Esta semana</a></li>
-        <li><a data-from="now/w" data-to="now" href="#">Até agora nesta semana</a></li>
-        <li><a data-from="now/M" data-to="now/M" href="#">Este mês</a></li>
-        <li><a data-from="now/M" data-to="now" href="#">Até agora neste mês</a></li>
-        <li><a data-from="now/y" data-to="now/y" href="#">Este ano</a></li>
-        <li><a data-from="now/y" data-to="now" href="#">Até agora neste ano</a></li>
-      </ul>
-      <ul>
-        <li><a data-from="now-5m" data-to="now" href="#">Últimos 5 minutos</a></li>
-        <li><a data-from="now-15m" data-to="now" href="#">Últimos 15 minutos</a></li>
-        <li><a data-from="now-30m" data-to="now" href="#">Últimos 30 minutos</a></li>
-        <li><a data-from="now-1h" data-to="now" href="#">Última 1 hora</a></li>
-        <li><a data-from="now-3h" data-to="now" href="#">Últimas 3 horas</a></li>
-        <li><a data-from="now-6h" data-to="now" href="#">Últimas 6 horas</a></li>
-        <li><a data-from="now-12h" data-to="now" href="#">Últimas 12 horas</a></li>
-        <li><a data-from="now-24h" data-to="now" href="#">Último 1 dia</a></li>
-      </ul>
+    <div class="flex items-center justify-between">
+      <span class="font-display text-headline-md text-on-surface flex items-center gap-2"><span class="material-symbols-outlined text-primary">calendar_month</span>Período personalizado</span>
+      <button type="button" class="w-9 h-9 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface-variant" data-close aria-label="fechar"><span class="material-symbols-outlined text-[20px]">close</span></button>
     </div>
-  </details>
+    <div class="grid grid-cols-2 gap-2">
+      <div class="field"><label for="from">De</label><input class="input font-mono" type="text" id="from" name="from" value="{{ rng.from }}" autocomplete="off" spellcheck="false"></div>
+      <div class="field"><label for="to">Até</label><input class="input font-mono" type="text" id="to" name="to" value="{{ rng.to }}" autocomplete="off" spellcheck="false"></div>
+    </div>
+    <div class="font-body-sm text-body-sm text-on-surface-variant">Aceita <span class="kbd">1h</span>, <span class="kbd">now-7d</span>, <span class="kbd">now/M</span>, <span class="kbd">now-1M/M</span> ou <span class="kbd">2026-09-01 14:00</span> (unidades m h d w M y).</div>
+    <div class="grid grid-cols-2 gap-1 font-body-sm text-body-sm">
+      {% for f, t, lbl in [("now-1d/d","now-1d/d","Ontem"),("now/d","now","Hoje até agora"),("now-1w/w","now-1w/w","Semana anterior"),("now/w","now","Esta semana"),("now-1M/M","now-1M/M","Mês anterior"),("now/M","now","Este mês"),("now-1y/y","now-1y/y","Ano anterior"),("now/y","now","Este ano")] %}
+      <button type="button" class="text-left px-2 py-1.5 rounded-lg hover:bg-surface-container-high text-on-surface" data-from="{{ f }}" data-to="{{ t }}">{{ lbl }}</button>
+      {% endfor %}
+    </div>
+    <button class="btn-primary w-full mt-1" type="submit">Aplicar</button>
+  </form>
 </div>
 <script>
-(function () {
-  const f = document.getElementById('from'), t = document.getElementById('to'), form = document.getElementById('trange');
-  document.querySelectorAll('.quick a').forEach(a => {
-    const norm = v => /^\d+\s*[mhdwMy]$/.test(v.trim()) ? 'now-' + v.replace(/\s+/g, '') : v.trim();
-    if (a.dataset.from === norm(f.value) && a.dataset.to === norm(t.value)) a.classList.add('selected');
-    a.addEventListener('click', e => { e.preventDefault(); f.value = a.dataset.from; t.value = a.dataset.to; form.submit(); });
-  });
-})();
+document.querySelectorAll('#sheet-trange [data-from]').forEach(b => b.addEventListener('click', () => {
+  document.getElementById('from').value = b.dataset.from; document.getElementById('to').value = b.dataset.to; b.form.submit(); }));
 </script>

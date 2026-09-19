@@ -1,30 +1,70 @@
 {% extends "base.html" %}
-{% block title %}evprices — municípios{% endblock %}
+{# icons: progress_activity sync_problem check_circle pause_circle replay stop_circle lock play_arrow #}
+{% block page_title %}Municípios{% endblock %}
 {% block content %}
-<p class="muted">Municípios monitorados são recoletados a cada {{ settings.collect_interval_hours|num }} h. Parar de monitorar mantém o histórico.</p>
-<div class="card tbl">
-<table>
-  <tr><th>Município</th><th class="r">Estações</th><th>Última coleta</th><th></th></tr>
-  {% for r in rows %}
-  <tr>
-    <td><a href="/?m={{ r.id }}"><b>{{ r.nome }}/{{ r.uf }}</b></a>
-      {% if not r.monitored %}<div class="muted">não monitorado</div>{% endif %}
-      {% if r.last_error %}<div class="fee-bad">{{ r.last_error }}</div>{% endif %}</td>
-    <td class="r">{{ r.stations }}</td>
-    <td>{% if r.collecting_since or r.collect_requested_at %}<span class="spin"></span> coletando{% else %}{{ r.last_collected_at|dt }}{% endif %}</td>
-    <td class="r">
-      {% if r.monitored %}<button class="btn ghost small" type="button" data-act="unmonitor" data-id="{{ r.id }}">parar</button>
-      {% else %}<button class="btn small" type="button" data-act="select" data-id="{{ r.id }}">monitorar</button>{% endif %}
-    </td>
-  </tr>
-  {% else %}
-  <tr><td colspan="4" class="muted">nenhum município ainda — <a href="/">escolha um</a></td></tr>
-  {% endfor %}
-</table>
+{% set monit = rows|selectattr("monitored")|list %}
+<div class="flex items-center justify-between gap-2 mb-1">
+  <h1 class="font-display text-headline-lg-mobile text-on-surface">Municípios</h1>
+  <button class="btn-primary btn-sm" type="button" data-open="sheet-picker"><span class="material-symbols-outlined text-[18px]">add_location</span>Novo</button>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-3">Municípios monitorados são recoletados a cada {{ settings.collect_interval_hours|num }} h pelo coletor. Parar de monitorar (só o dono) mantém o histórico no banco.</p>
+
+<section class="card grid grid-cols-3 gap-2 mb-3">
+  <div class="rounded-lg bg-surface-container-high p-2.5 flex flex-col"><span class="font-body-sm text-body-sm text-on-surface-variant">Monitorados</span><span class="font-display text-price-display-mobile text-primary tabular-nums">{{ monit|length }}</span></div>
+  <div class="rounded-lg bg-surface-container-high p-2.5 flex flex-col"><span class="font-body-sm text-body-sm text-on-surface-variant">Estações</span><span class="font-display text-price-display-mobile text-secondary tabular-nums">{{ rows|sum(attribute="stations") }}</span></div>
+  <div class="rounded-lg bg-surface-container-high p-2.5 flex flex-col"><span class="font-body-sm text-body-sm text-on-surface-variant">Próxima coleta</span><span class="font-display text-telemetry-metric text-tertiary tabular-nums">{% if next_at %}{{ next_at|dt("%d/%m %H:%M") }}{% else %}—{% endif %}</span></div>
+</section>
+
+<div class="relative mb-3">
+  <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px] pointer-events-none">search</span>
+  <input class="input pl-10" id="filtro" type="search" placeholder="Filtrar a lista…" autocomplete="off">
+</div>
+
+<div class="flex flex-col gap-2" id="lista">
+{% for r in rows %}
+{% set collecting = r.collecting_since or r.collect_requested_at %}
+<article class="card !p-space-sm flex items-center gap-3 relative overflow-hidden {% if not r.monitored %}opacity-80{% endif %}" data-name="{{ r.nome }}/{{ r.uf }}">
+  {% if collecting %}<div class="absolute inset-x-0 top-0 h-0.5 bg-primary/30"><div class="h-full bg-primary animate-pulse w-3/5"></div></div>{% endif %}
+  <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 {% if collecting %}bg-primary-container/20 text-primary{% elif r.last_error %}bg-error-container/30 text-error{% elif r.monitored %}bg-secondary-container/20 text-secondary{% else %}bg-surface-container-high text-on-surface-variant{% endif %}">
+    <span class="material-symbols-outlined text-[20px] {% if collecting %}animate-spin{% endif %}">{% if collecting %}progress_activity{% elif r.last_error %}sync_problem{% elif r.monitored %}check_circle{% else %}pause_circle{% endif %}</span></div>
+  <div class="min-w-0 flex-1">
+    <div class="flex items-center gap-2 min-w-0"><a class="font-display text-headline-md text-on-surface hover:text-primary truncate" href="/?m={{ r.id }}">{{ r.nome }}/{{ r.uf }}</a><span class="font-display text-telemetry-metric text-on-surface-variant tabular-nums shrink-0">{{ r.stations }}</span></div>
+    <div class="font-body-sm text-body-sm text-on-surface-variant truncate">{% if collecting %}<span class="text-primary">coletando…</span>{% elif r.last_error %}<span class="text-error">{{ r.last_error }}</span>{% elif not r.monitored %}não monitorado · histórico preservado{% elif r.last_collected_at %}coletado {{ r.last_collected_at|dt }}{% else %}nunca coletado{% endif %}</div>
+  </div>
+  <div class="flex items-center gap-1 shrink-0">
+    {% if r.monitored %}
+      {% if r.last_error and not collecting %}<button class="btn-ghost btn-sm !px-2 text-primary" type="button" data-act="select" data-id="{{ r.id }}" title="tentar novamente"><span class="material-symbols-outlined text-[18px]">replay</span></button>{% endif %}
+      {% if request.state.owner %}<button class="btn-danger btn-sm !px-2" type="button" data-act="unmonitor" data-id="{{ r.id }}" data-name="{{ r.nome }}/{{ r.uf }}" title="parar de monitorar"><span class="material-symbols-outlined text-[18px]">stop_circle</span></button>
+      {% else %}<span class="material-symbols-outlined text-[16px] text-outline" title="parar: só o dono">lock</span>{% endif %}
+    {% else %}<button class="btn-primary btn-sm" type="button" data-act="select" data-id="{{ r.id }}"><span class="material-symbols-outlined text-[16px]">play_arrow</span>Monitorar</button>{% endif %}
+  </div>
+</article>
+{% else %}
+<div class="card flex flex-col items-center text-center gap-2 py-8">
+  <span class="material-symbols-outlined text-[40px] text-outline">map</span>
+  <div class="font-display text-headline-md text-on-surface">Nenhum município ainda</div>
+  <div class="font-body-sm text-body-sm text-on-surface-variant">Toque em "Novo" ou escolha um na página de preços.</div>
+</div>
+{% endfor %}
+</div>
+<div class="sheet" id="sheet-picker" hidden>
+  <div class="panel">
+    <div class="flex items-center justify-between">
+      <span class="font-display text-headline-md text-on-surface flex items-center gap-2"><span class="material-symbols-outlined text-primary">add_location</span>Novo município</span>
+      <button type="button" class="w-9 h-9 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface-variant" data-close aria-label="fechar"><span class="material-symbols-outlined text-[20px]">close</span></button>
+    </div>
+    {% include "_picker.html" %}
+  </div>
 </div>
 <script>
 document.querySelectorAll('button[data-act]').forEach(b => b.addEventListener('click', async () => {
+  if (b.dataset.act === 'unmonitor' && !confirm('Parar de monitorar ' + b.dataset.name + '? O histórico continua salvo.')) return;
   b.disabled = true; await fetch(`/api/municipio/${b.dataset.id}/${b.dataset.act}`, {method: 'POST'}); location.reload();
 }));
+document.getElementById('filtro').addEventListener('input', e => {
+  const q = e.target.value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  document.querySelectorAll('#lista > article').forEach(a => { a.hidden = !a.dataset.name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().includes(q); });
+});
+if (document.querySelector('[data-act] .spin, .animate-spin')) setTimeout(() => location.reload(), 8000);
 </script>
 {% endblock %}

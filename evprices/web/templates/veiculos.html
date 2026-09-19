@@ -1,55 +1,85 @@
 {% extends "base.html" %}
-{% block title %}evprices — veículos{% endblock %}
+{% block page_title %}Veículos{% endblock %}
 {% block content %}
-<p class="muted">O plano de viagem usa a bateria, a <b>autonomia real em estrada</b> (com bateria cheia, a 100–110 km/h — não a do
-  folheto), a potência DC que o carro aceita e os plugues compatíveis. Autonomia e consumo são a mesma informação: informe
-  um e o outro se ajusta. A autonomia útil considerada é a fatia entre a <b>reserva</b> (nunca chegar abaixo) e o
-  <b>teto</b> de carga em viagem (acima de 80 % a potência cai muito).</p>
-{% if ok %}<div class="card ok-msg">✔ {{ ok }}</div>{% endif %}
-{% if err %}<div class="card fee-bad">⚠️ {{ err }}</div>{% endif %}
+<div class="mb-3">
+  <div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary">electric_car</span><h1 class="font-display text-headline-lg-mobile text-on-surface">Veículos</h1></div>
+  <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">O plano de viagem usa a bateria útil, a <b>autonomia real em estrada</b> (bateria cheia, a 100–110 km/h — não a do folheto), a potência DC que o carro aceita e os plugues compatíveis. Autonomia e consumo são a mesma informação: informe um e o outro se ajusta (consumo = bateria ÷ autonomia × 100).</p>
+</div>
+{% if ok %}<div class="card-low mb-3 flex items-start gap-2 text-secondary"><span class="material-symbols-outlined text-[20px]">check_circle</span><span class="font-body-sm text-body-sm">{{ ok }}</span></div>{% endif %}
+{% if err %}<div class="card-low mb-3 flex items-start gap-2 text-error"><span class="material-symbols-outlined text-[20px]">error</span><span class="font-body-sm text-body-sm">{{ err }}</span></div>{% endif %}
 
 {% macro vform(v) %}
-<form class="cred" method="post" action="/veiculos" autocomplete="off">
+<form method="post" action="/veiculos" autocomplete="off" class="flex flex-col gap-space-sm">
   {% if v %}<input type="hidden" name="id" value="{{ v.id }}">{% endif %}
-  <div class="grid3">
-    <div><label>nome</label><input type="text" name="name" value="{{ v.name if v else '' }}" placeholder="BYD Dolphin GS" required></div>
-    {# valores medidos, sem domínio discreto: step="any"; min/max só contra erro de digitação #}
-    <div><label>bateria útil (kWh)</label><input type="number" name="battery_kwh" step="any" min="5" max="500" value="{{ v.battery_kwh|numin if v else '' }}" required data-sync="batt"></div>
-    {# autonomia e consumo são a mesma informação: o digitado (range_source) vai como está; o outro é derivado só para exibir #}
-    {% set src = v.range_source if v else 'autonomia' %}
-    <input type="hidden" name="range_source" value="{{ src }}" data-sync="source">
-    <div><label data-sync-label="range">{{ '= ' if src == 'consumo' }}autonomia real em estrada (km, bateria cheia)</label>
-      <input type="number" name="range_km" step="any" min="30" max="2000" value="{{ (v.range_full_km|numin if src == 'autonomia' else v.full_range_km|numin(0)) if v else '' }}" data-sync="range" class="{{ 'derived' if src == 'consumo' }}"></div>
-    <div><label data-sync-label="cons">{{ '= ' if src == 'autonomia' }}consumo (kWh/100 km)</label>
-      <input type="number" name="kwh_100km" step="any" min="3" max="100" value="{{ (v.kwh_100km|numin if src == 'consumo' else v.kwh_100km|numin(1)) if v else '' }}" data-sync="cons" class="{{ 'derived' if src == 'autonomia' }}"></div>
-    <div><label>potência DC máx. (kW)</label><input type="number" name="max_dc_kw" step="any" min="1" max="1000" value="{{ v.max_dc_kw|numin if v else '' }}" required></div>
-    <div><label>reserva mínima (%)</label><input type="number" name="soc_min_pct" step="1" min="0" max="99" value="{{ v.soc_min_pct if v else 10 }}"></div>
-    <div><label>teto de carga em viagem (%)</label><input type="number" name="soc_max_pct" step="1" min="1" max="100" value="{{ v.soc_max_pct if v else 90 }}"></div>
+  <div class="field"><label>nome</label><input class="input" type="text" name="name" value="{{ v.name if v else '' }}" placeholder="BYD Dolphin GS" required></div>
+  <div class="grid grid-cols-2 gap-2">
+    <div class="field"><label>bateria útil (kWh)</label><input class="input" type="number" name="battery_kwh" step="any" min="5" max="500" value="{{ v.battery_kwh|numin if v else '' }}" required data-sync="batt"></div>
+    <div class="field"><label>potência DC máx. (kW)</label><input class="input" type="number" name="max_dc_kw" step="any" min="1" max="1000" value="{{ v.max_dc_kw|numin if v else '' }}" required></div>
   </div>
-  <div style="display:flex;gap:16px;flex-wrap:wrap">
-    {% for p in plugs %}<label><input type="checkbox" name="plug_types" value="{{ p }}" {% if (v and p in v.plug_types) or (not v and p == 'CCS 2') %}checked{% endif %}> {{ p }}</label>{% endfor %}
-    <label><input type="checkbox" name="is_default" value="1" {% if v and v.is_default %}checked{% endif %}> padrão</label>
+  {% set src = v.range_source if v else 'autonomia' %}
+  <input type="hidden" name="range_source" value="{{ src }}" data-sync="source">
+  <div class="rounded-lg bg-surface-container-low p-space-sm flex flex-col gap-2">
+    <div class="flex items-center justify-between"><span class="font-label-md text-label-md text-on-surface flex items-center gap-1"><span class="material-symbols-outlined text-primary text-[16px]">autorenew</span>Autonomia ↔ consumo</span><span class="font-label-sm text-label-sm text-outline">o "=" marca o derivado</span></div>
+    <div class="grid grid-cols-2 gap-2">
+      <div class="field"><label data-sync-label="range">{{ '= ' if src == 'consumo' }}autonomia real (km, cheia)</label>
+        <input class="input {{ 'derived' if src == 'consumo' }}" type="number" name="range_km" step="any" min="30" max="2000" value="{{ (v.range_full_km|numin if src == 'autonomia' else v.full_range_km|numin(0)) if v else '' }}" data-sync="range"></div>
+      <div class="field"><label data-sync-label="cons">{{ '= ' if src == 'autonomia' }}consumo (kWh/100 km)</label>
+        <input class="input {{ 'derived' if src == 'autonomia' }}" type="number" name="kwh_100km" step="any" min="3" max="100" value="{{ (v.kwh_100km|numin if src == 'consumo' else v.kwh_100km|numin(1)) if v else '' }}" data-sync="cons"></div>
+    </div>
   </div>
-  <div class="actions">
-    <button class="btn" type="submit" name="action" value="save">{{ "Salvar" if v else "Adicionar" }}</button>
-    {% if v %}<button class="btn ghost" type="submit" name="action" value="delete" formnovalidate onclick="return confirm('Remover {{ v.name }}?')">Remover</button>{% endif %}
+  <div class="grid grid-cols-2 gap-2">
+    <div class="field"><label class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px] text-error">battery_alert</span>reserva mínima (%)</label><input class="input" type="number" name="soc_min_pct" step="1" min="0" max="99" value="{{ v.soc_min_pct if v else 10 }}"></div>
+    <div class="field"><label class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px] text-tertiary">bolt</span>teto de carga em viagem (%)</label><input class="input" type="number" name="soc_max_pct" step="1" min="1" max="100" value="{{ v.soc_max_pct if v else 90 }}"></div>
+  </div>
+  <div class="field"><label>plugues</label>
+    <div class="grid grid-cols-2 gap-2">
+      {% for p in plugs %}<label class="flex items-center gap-2 rounded-lg bg-surface-container-low p-2.5 cursor-pointer font-label-md text-label-md text-on-surface has-[:checked]:bg-surface-container-highest"><input type="checkbox" class="accent-primary w-4 h-4" name="plug_types" value="{{ p }}" {% if (v and p in v.plug_types) or (not v and p == 'CCS 2') %}checked{% endif %}>{{ p }}</label>{% endfor %}
+    </div></div>
+  <label class="flex items-center gap-3 rounded-lg bg-surface-container-low p-3 cursor-pointer"><input type="checkbox" class="accent-primary w-5 h-5" name="is_default" value="1" {% if v and v.is_default %}checked{% endif %}><span class="flex flex-col"><span class="font-label-md text-label-md text-on-surface font-semibold">veículo padrão</span><span class="font-body-sm text-body-sm text-on-surface-variant">usado nas viagens novas</span></span></label>
+  <div class="grid {% if v %}grid-cols-2{% endif %} gap-2 pt-1">
+    <button class="btn-primary h-12" type="submit" name="action" value="save"><span class="material-symbols-outlined text-[20px]">save</span>{{ "Salvar" if v else "Adicionar" }}</button>
+    {% if v %}<button class="btn-danger h-12" type="submit" name="action" value="delete" formnovalidate onclick="return confirm('Remover {{ v.name }}?')"><span class="material-symbols-outlined text-[18px]">delete</span>Remover</button>{% endif %}
   </div>
 </form>
 {% endmacro %}
 
+<div class="flex flex-col gap-3">
 {% for v in vehicles %}
-<details class="card" {% if loop.first %}open{% endif %}>
-  <summary style="cursor:pointer"><b>{{ v.name }}</b>{% if v.is_default %} <span class="chip">padrão</span>{% endif %}
-    <span class="muted">· {{ v.battery_kwh|num }} kWh · autonomia <b>{{ v.full_range_km|round(0)|int }} km</b> ({{ v.kwh_100km|round(1)|num }} kWh/100 km) ·
-      útil em viagem {{ v.range_km|round(0)|int }} km ({{ v.soc_min_pct }}–{{ v.soc_max_pct }} %) · DC {{ v.max_dc_kw|num }} kW · {{ v.plug_types|join(", ") }}</span></summary>
-  <div style="margin-top:8px">{{ vform(v) }}</div>
-</details>
+<section class="card !p-0 overflow-hidden flex flex-col">
+  <div class="p-space-md {% if v.is_default %}bg-surface-container-high{% endif %} flex flex-col gap-space-sm">
+    <div class="flex items-start justify-between gap-2">
+      <div class="min-w-0"><span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">{% if v.is_default %}Veículo padrão{% else %}Veículo{% endif %}</span>
+        <h2 class="font-display text-headline-lg-mobile text-on-surface truncate">{{ v.name }}</h2></div>
+      {% if v.is_default %}<span class="pill-ok shrink-0"><span class="material-symbols-outlined text-[13px]">check</span>padrão</span>
+      {% else %}<form method="post" action="/veiculos"><input type="hidden" name="id" value="{{ v.id }}"><button class="btn-ghost btn-sm text-primary" type="submit" name="action" value="default"><span class="material-symbols-outlined text-[16px]">check_circle</span>Tornar padrão</button></form>{% endif %}
+    </div>
+    <div class="grid grid-cols-2 gap-2">
+      <div class="rounded-lg bg-surface-container-lowest p-2.5 flex flex-col"><span class="font-label-sm text-label-sm text-on-surface-variant">Bateria útil</span><div class="flex items-baseline gap-1"><span class="font-display text-headline-md text-primary tabular-nums">{{ v.battery_kwh|num }}</span><span class="font-body-sm text-body-sm text-on-surface-variant">kWh</span></div></div>
+      <div class="rounded-lg bg-surface-container-lowest p-2.5 flex flex-col"><span class="font-label-sm text-label-sm text-on-surface-variant">DC máx.</span><div class="flex items-baseline gap-1"><span class="font-display text-headline-md text-secondary tabular-nums">{{ v.max_dc_kw|num }}</span><span class="font-body-sm text-body-sm text-on-surface-variant">kW · {{ v.plug_types|join(", ") }}</span></div></div>
+    </div>
+    <div class="rounded-lg bg-surface-container-lowest p-3 flex flex-col gap-2">
+      <div class="flex justify-between items-center font-label-sm text-label-sm text-on-surface-variant"><span class="flex items-center gap-1"><span class="material-symbols-outlined text-[16px] text-tertiary">route</span>Autonomia real em estrada</span><span class="text-tertiary font-semibold">janela {{ v.soc_min_pct }}–{{ v.soc_max_pct }} %</span></div>
+      <div class="flex items-baseline justify-between"><div class="flex items-baseline gap-1"><span class="font-display text-price-display-mobile text-on-surface tabular-nums">{{ v.range_km|round(0)|int }}</span><span class="font-body-sm text-body-sm text-on-surface-variant">km úteis</span></div><span class="font-body-sm text-body-sm text-on-surface-variant tabular-nums">{{ v.full_range_km|round(0)|int }} km cheia · {{ v.kwh_100km|round(1)|num }} kWh/100 km</span></div>
+      <div class="bar flex"><i class="!rounded-none !bg-error-container" style="width:{{ v.soc_min_pct }}%" title="reserva"></i><i class="!rounded-none" style="width:{{ v.soc_max_pct - v.soc_min_pct }}%" title="janela de viagem"></i><i class="!rounded-none !bg-surface-variant" style="width:{{ 100 - v.soc_max_pct }}%" title="acima do teto"></i></div>
+      <div class="flex justify-between font-label-sm text-label-sm text-on-surface-variant"><span>0 %</span><span class="text-error">{{ v.soc_min_pct }} % reserva</span><span class="text-tertiary">{{ v.soc_max_pct }} % teto</span><span>100 %</span></div>
+    </div>
+    <button class="btn-ghost w-full h-10" type="button" data-toggle="vf-{{ v.id }}"><span class="material-symbols-outlined text-primary text-[18px]">tune</span>Editar {{ v.name }}<span class="material-symbols-outlined text-[18px] text-on-surface-variant ml-auto" data-arrow>expand_more</span></button>
+  </div>
+  <div class="p-space-md" id="vf-{{ v.id }}" hidden>{{ vform(v) }}</div>
+</section>
 {% endfor %}
-
-<details class="card" {% if not vehicles %}open{% endif %}>
-  <summary style="cursor:pointer"><b>+ adicionar veículo</b></summary>
-  <div style="margin-top:8px">{{ vform(none) }}</div>
-</details>
-<p><a class="btn ghost" href="/viagens" data-back>← voltar</a></p>
+<section class="card !p-0 overflow-hidden">
+  <button class="w-full p-space-md flex items-center gap-2 text-primary font-label-md text-label-md font-semibold" type="button" data-toggle="vf-new"><span class="material-symbols-outlined text-[20px]">add_circle</span>Adicionar outro veículo<span class="material-symbols-outlined text-[18px] text-on-surface-variant ml-auto" data-arrow>expand_more</span></button>
+  <div class="px-space-md pb-space-md" id="vf-new" {% if vehicles %}hidden{% endif %}>{{ vform(none) }}</div>
+</section>
+</div>
+{% endblock %}
+{% block scripts %}
 <script src="/static/rangesync.js"></script>
+<script>
+document.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', () => {
+  const p = document.getElementById(b.dataset.toggle); p.hidden = !p.hidden;
+  const a = b.querySelector('[data-arrow]'); if (a) a.textContent = p.hidden ? 'expand_more' : 'expand_less';
+}));
+</script>
 {% endblock %}

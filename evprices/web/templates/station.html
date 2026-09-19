@@ -1,81 +1,214 @@
 {% extends "base.html" %}
-{% block title %}{{ st.name }} — evprices{% endblock %}
+{# icons: visibility visibility_off expand_more expand_less trending_flat trending_up trending_down chevron_right wifi wc restaurant shopping_cart garage schedule edit_note storefront check #}
+{% block page_title %}{{ st.name }}{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/static/evochart.css">
-<div class="card">
-  {% set bb = brand_badge(st.brand) %}{% set lg = brand_logo(st.brand) %}
-  <div class="row brandline">{% if lg %}<img class="logo" src="{{ lg }}" alt="{{ st.brand or 'tupi' }}">{% else %}<span class="logo" style="background:{{ bb[1] }};color:{{ bb[2] }}">{{ bb[0] }}</span>{% endif %}
-    <div class="grow"><div class="name" style="white-space:normal">{{ st.name }}</div></div>
-    <span class="chip">{{ st.brand or "tupi" }}</span>
-    <button class="star inline{% if st.favorite %} on{% endif %}" type="button" data-fav="{{ st.id }}" title="favorita" aria-pressed="{{ 'true' if st.favorite else 'false' }}">★</button></div>
-  {% set dest = (st.lat ~ "," ~ st.lon) if st.lat is not none and st.lon is not none else (st.address or st.name) %}
-  <div style="margin:6px 0">
-    <a class="maplink" href="https://www.google.com/maps/search/?api=1&query={{ dest|urlencode }}" data-dest="{{ dest }}" data-name="{{ st.name }}" target="_blank" rel="noopener">📍 {{ st.address or "ver no mapa" }}</a>
+{% set dest = (st.lat ~ "," ~ st.lon) if st.lat is not none and st.lon is not none else (st.address or st.name) %}
+{% set skind = norm_state(st.state) %}
+<div class="flex items-center justify-between mb-3">
+  <a class="btn-ghost btn-sm rounded-full" href="/{% if mun %}?m={{ mun.id }}{% endif %}" data-back><span class="material-symbols-outlined text-[18px] text-primary">arrow_back</span>Voltar</a>
+  <button class="w-9 h-9 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface" id="btn-share" type="button" hidden aria-label="compartilhar"><span class="material-symbols-outlined text-[18px]">share</span></button>
+</div>
+
+<section class="card flex flex-col gap-2.5">
+  <div class="flex items-start gap-2.5">
+    {% with brand = st.brand %}{% include "_brand.html" %}{% endwith %}
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-1.5 font-label-sm text-label-sm"><span class="uppercase tracking-wider text-primary">{{ st.brand or "tupi" }}</span>{% if mun %}<span class="text-outline-variant">•</span><a class="text-on-surface-variant" href="/?m={{ mun.id }}">{{ mun.nome }}/{{ mun.uf }}</a>{% endif %}</div>
+      <h1 class="font-display text-headline-lg-mobile text-on-surface">{{ st.name }}</h1>
+    </div>
+    <button class="w-10 h-10 -mr-2 -mt-2 rounded-full flex items-center justify-center shrink-0" type="button" data-fav="{{ st.id }}" title="favorita" aria-pressed="{{ 'true' if st.favorite else 'false' }}">
+      <span class="material-symbols-outlined text-[24px] {% if st.favorite %}fill text-tertiary{% else %}text-outline{% endif %}">star</span></button>
   </div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 8px">
-    <a class="btn small" href="https://www.google.com/maps/dir/?api=1&destination={{ dest|urlencode }}" data-dest="{{ dest }}" data-name="{{ st.name }}" data-dir="1" target="_blank" rel="noopener">🧭 Rotas</a>
+  <div class="flex items-center justify-between gap-2">
+    <a class="flex items-center gap-1 font-body-sm text-body-sm text-primary hover:underline min-w-0" href="https://www.google.com/maps/search/?api=1&query={{ dest|urlencode }}" data-dest="{{ dest }}" data-name="{{ st.name }}" target="_blank" rel="noopener">
+      <span class="material-symbols-outlined text-[16px] shrink-0">location_on</span><span class="truncate">{{ st.address or "ver no mapa" }}</span></a>
+    <a class="btn-ghost btn-sm shrink-0" href="https://www.google.com/maps/dir/?api=1&destination={{ dest|urlencode }}" data-dest="{{ dest }}" data-name="{{ st.name }}" data-dir="1" target="_blank" rel="noopener"><span class="material-symbols-outlined text-[16px] text-secondary">explore</span>Rotas</a>
   </div>
-  <div class="muted">{{ st.business_hours or "" }}{% if st.free_parking is not none %} · estacionamento {{ "grátis" if st.free_parking else "pago" }}{% endif %}
-    · estado <span class="state-{{ st.state }}">{{ st.state or "?" }}</span></div>
-  <div class="muted">{% if mun %}<a href="/?m={{ mun.id }}">{{ mun.nome }}/{{ mun.uf }}</a> · {% endif %}ID {{ st.external_id }} · visto {{ st.last_seen_at|dt }}</div>
+  <div class="flex flex-wrap items-center gap-1.5">
+    {% if st.business_hours %}<span class="chip"><span class="material-symbols-outlined text-[13px] text-secondary mr-1">schedule</span>{{ st.business_hours }}</span>{% endif %}
+    {% if st.free_parking is not none %}<span class="chip"><span class="material-symbols-outlined text-[13px] text-primary mr-1">local_parking</span>estacionamento {{ "grátis" if st.free_parking else "pago" }}</span>{% endif %}
+    <span class="pill-{{ 'ok' if skind == 'available' else 'warn' if skind == 'busy' else 'bad' if skind == 'down' else 'muted' }}"><span class="dot"></span>{{ st.state or "?" }}</span>
+    <span class="font-label-sm text-label-sm text-outline">visto {{ st.last_seen_at|ago }}</span>
+  </div>
+  <div class="flex items-center justify-between rounded-md bg-surface-container-lowest/60 px-2.5 py-1.5 font-label-sm text-label-sm text-outline tracking-wider">
+    <span class="flex items-center gap-1"><span class="material-symbols-outlined text-[13px]">cell_tower</span>fonte: {{ st.source }}</span>
+    <span class="font-mono">ID {{ st.external_id }}</span>
+  </div>
   {% set op = (ops or {}).get(st.source) %}
-  {% if op %}{% set sid = st.id %}{% set priced = st.priced %}{% set alt = st.alt %}{% include "_operator_link.html" %}{% endif %}
-</div>
+  {% if op %}{% set sid = st.id %}{% set priced = st.priced %}{% set alt = st.alt %}<div>{% include "_operator_link.html" %}</div>{% endif %}
+</section>
 
-<h2>Evolução do R$/kWh</h2>
-{% set trange_action = "/station/" ~ st.id %}{% include "_trange.html" %}
-{% if home %}
-<div class="toolbar">
-  <label><input type="checkbox" id="show-home" checked> 🏠 casa · convencional</label>
-  {% if home.series|length > 1 %}<label><input type="checkbox" id="show-home2"> 🌙 casa · branca fora ponta</label>{% endif %}
-  <span class="muted" id="range"></span>
-</div>
-{% endif %}
-<div id="panels">{% if not evo %}<div class="card muted">Sem tarifa em R$/kWh registrada para esta estação.</div>{% endif %}</div>
-<script id="data" type="application/json">{{ evo|tojson }}</script>
-<script id="home" type="application/json">{{ (home.series if home else [])|tojson }}</script>
-<script id="rng" type="application/json">{{ {"start": rng.start, "end": rng.end}|tojson }}</script>
-<script src="/static/evochart.js"></script>
-<script>evoChart();</script>
+{% if ok %}<div class="card-low mt-3 flex items-start gap-2 text-secondary"><span class="material-symbols-outlined text-[20px]">check_circle</span><span class="font-body-sm text-body-sm">{{ ok }} — obrigado!</span></div>{% endif %}
 
-{% for c in connectors %}
-<h2>Tomada {{ c.external_id }} — {{ c.plug_type or "?" }} · {{ c.current_type or "" }} {{ c.power_kw|num }} kW
-  {% if c.power_kw is not none and c.power_kw <= settings.min_power_kw %}<span class="chip">lenta</span>{% endif %}
-  <span class="muted">
-    {% if c.kind == "available" %}<span class="state-Available">livre</span>
-    {% elif c.kind == "busy" %}<span class="state-Charging">em uso{% if c.soc_pct is not none %}: carro a <b>{{ c.soc_pct }}%</b>{% endif %}{% if c.charging_since %} (desde {{ c.charging_since|dt("%H:%M") }}, {{ c.charging_since|ago }}){% endif %}</span>
-    {% elif c.kind == "down" %}<span class="state-Unavailable">{{ "offline" if c.online is false else "fora do ar" }}</span>
-    {% else %}estado ?{% endif %}
-    · <span title="última coleta">{{ c.last_seen_at|ago }}</span></span></h2>
-<div class="card tbl">
-<table>
-  <tr><th>Vigência</th><th class="r">R$/kWh</th><th class="r">Ativação</th><th>Ociosidade</th></tr>
-  {% for t in c.tariffs %}
-  <tr>
-    <td>{{ t.valid_from|date }} → {% if t.valid_to %}{{ t.valid_to|date }}{% else %}<span class="current">vigente</span>{% endif %}
-        <div class="muted">confirmado {{ t.last_confirmed_at|date }}</div>
-        {% if t.windows %}<div class="muted">{% for w in t.windows %}{{ w.start_time }}–{{ w.end_time }}: {{ w.price_kwh|brl }}{% if w.is_default %}*{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
-        {% if t.notes %}<div class="muted">{{ t.notes }}</div>{% endif %}</td>
-    <td class="r"><b>{% if t.is_free and not t.price_kwh %}<span class="state-Available">grátis</span>{% elif t.price_kwh is not none %}{{ t.price_kwh|brl }}{% elif t.price_min %}{{ t.price_min|brl(3) }}/min{% else %}—{% endif %}</b></td>
-    <td class="r">{% if t.flat_fee and t.flat_fee > 0 %}{{ t.flat_fee|brl }}{% if t.flat_fee_waived_above_kwh %}<div class="muted">isenta ≥ {{ t.flat_fee_waived_above_kwh|num }} kWh</div>{% endif %}{% else %}—{% endif %}</td>
-    <td>{{ idle_desc(t.idle_fee, t.idle_period_min, t.idle_grace_min) }}</td>
-  </tr>
+<!-- comodidades -->
+{% set am = st.amenities %}
+<section class="card mt-3 flex flex-col gap-2.5" id="comodidades">
+  <div class="flex items-center justify-between gap-2">
+    <h2 class="font-display text-headline-md text-on-surface flex items-center gap-1.5"><span class="material-symbols-outlined text-[20px] text-primary">storefront</span>Comodidades</h2>
+    <button class="btn-ghost btn-sm text-primary" type="button" data-open="sheet-amenities"><span class="material-symbols-outlined text-[16px]">edit_note</span>{% if am %}Corrigir{% else %}Informar{% endif %}</button>
+  </div>
+  {% if am and (am.yes or am.no) %}
+  <div class="grid grid-cols-3 gap-2">
+    {% for k in am.yes %}<div class="flex flex-col items-center gap-1 rounded-lg bg-secondary-container/15 text-secondary p-2 text-center"><span class="material-symbols-outlined text-[26px]">{{ AMENITY_KEYS[k][1] }}</span><span class="font-label-sm text-label-sm">{{ AMENITY_KEYS[k][0] }}</span></div>{% endfor %}
+    {% for k in am.no %}<div class="flex flex-col items-center gap-1 rounded-lg bg-surface-container-low text-outline p-2 text-center opacity-70"><span class="material-symbols-outlined text-[26px]">{{ AMENITY_KEYS[k][1] }}</span><span class="font-label-sm text-label-sm line-through">{{ AMENITY_KEYS[k][0] }}</span></div>{% endfor %}
+  </div>
+  {% if am.wifi and am.wifi_ssid %}<div class="font-body-sm text-body-sm text-on-surface-variant">Wi-Fi <span class="kbd">{{ am.wifi_ssid }}</span>{% if am.wifi_password %} · senha <span class="kbd">{{ am.wifi_password }}</span>{% endif %}</div>{% endif %}
+  {% if am.notes %}<div class="font-body-sm text-body-sm text-on-surface-variant">{{ am.notes }}</div>{% endif %}
+  <div class="font-label-sm text-label-sm text-outline">informado por {{ "quem usa o app" if am.updated_by == "visitante" else am.updated_by }}{% if am.updated_at %} · {{ am.updated_at|dt }}{% endif %}</div>
   {% else %}
-  <tr><td colspan="4" class="muted">sem tarifa registrada</td></tr>
-  {% endfor %}
-</table>
+  <p class="font-body-sm text-body-sm text-on-surface-variant">Ninguém informou ainda. As fontes de preço não publicam isso — se você conhece o local, toque em "Informar": ajuda a escolher onde parar na viagem.</p>
+  {% endif %}
+</section>
+<div class="sheet" id="sheet-amenities" hidden>
+  <form class="panel" method="post" action="/station/{{ st.id }}/comodidades" id="amen-form">
+    <div class="flex items-center justify-between">
+      <span class="font-display text-headline-md text-on-surface">O que tem no local?</span>
+      <button type="button" class="w-9 h-9 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface-variant" data-close aria-label="fechar"><span class="material-symbols-outlined text-[20px]">close</span></button>
+    </div>
+    <p class="font-body-sm text-body-sm text-on-surface-variant">Toque para alternar: <span class="text-secondary font-semibold">tem</span> → <span class="text-on-surface font-semibold">não tem</span> → não sei. "Não sei" não apaga o que outra pessoa informou.</p>
+    <div class="grid grid-cols-3 gap-2">
+      {% for k, (lbl, ico) in AMENITY_KEYS.items() %}{% set cur = am[k] if am else none %}
+      <button type="button" class="amen-tile" data-state="{{ '1' if cur is true else '0' if cur is false else '' }}">
+        <input type="hidden" name="{{ k }}" value="{{ '1' if cur is true else '0' if cur is false else '' }}">
+        <span class="material-symbols-outlined text-[30px]">{{ ico }}</span>
+        <span class="font-label-md text-label-md leading-tight">{{ lbl }}</span>
+        <span class="font-label-sm text-label-sm state-lbl"></span>
+      </button>
+      {% endfor %}
+    </div>
+    <div class="grid grid-cols-2 gap-2">
+      <div class="field"><label>rede Wi-Fi</label><input class="input" type="text" name="wifi_ssid" value="{{ am.wifi_ssid if am and am.wifi_ssid else '' }}" maxlength="60" placeholder="opcional"></div>
+      <div class="field"><label>senha</label><input class="input" type="text" name="wifi_password" value="{{ am.wifi_password if am and am.wifi_password else '' }}" maxlength="60" placeholder="opcional"></div>
+    </div>
+    <div class="field"><label>observação</label><input class="input" type="text" name="notes" value="{{ am.notes if am and am.notes else '' }}" maxlength="300" placeholder="ex.: lanchonete fecha às 22 h"></div>
+    <button class="btn-primary w-full h-12 mt-1" type="submit"><span class="material-symbols-outlined text-[20px]">check</span>Salvar</button>
+  </form>
 </div>
-{% endfor %}
 <script>
-// iPhone/iPad: abre o Apple Mapas (que também oferece o Google Maps se instalado); resto: link universal do Google Maps,
-// que abre o app no Android e o site no desktop.
 (function () {
-  if (!/iPad|iPhone|iPod/.test(navigator.userAgent)) return;
-  document.querySelectorAll('a[data-dest]').forEach(a => {
-    const d = encodeURIComponent(a.dataset.dest), n = encodeURIComponent(a.dataset.name);
-    a.href = a.dataset.dir ? `https://maps.apple.com/?daddr=${d}&q=${n}` : `https://maps.apple.com/?ll=${d}&q=${n}`;
+  const next = {'': '1', '1': '0', '0': ''}, lbl = {'': 'não sei', '1': 'tem', '0': 'não tem'};
+  document.querySelectorAll('#amen-form .amen-tile').forEach(t => {
+    const paint = () => { t.querySelector('.state-lbl').textContent = lbl[t.dataset.state]; t.querySelector('input').value = t.dataset.state; };
+    t.addEventListener('click', () => { t.dataset.state = next[t.dataset.state]; paint(); }); paint();
   });
 })();
 </script>
-<p><a class="btn ghost" href="/" data-back>← voltar</a></p>
+
+<!-- evolução -->
+<section class="card mt-3 flex flex-col gap-2.5">
+  <div class="flex items-start justify-between gap-2">
+    <div>
+      <span class="font-label-sm text-label-sm uppercase tracking-widest text-outline">Evolução do preço</span>
+      <div class="flex items-baseline gap-2 mt-0.5">
+        {% set cur = evo[0].current if evo else none %}
+        <span class="font-display text-price-display text-on-surface leading-none tabular-nums">{% if cur is not none %}{{ cur|brl }}{% else %}—{% endif %}</span>
+        <span class="font-label-md text-label-md text-on-surface-variant">/ kWh</span>
+      </div>
+    </div>
+  </div>
+  {% set trange_action = "/station/" ~ st.id %}{% include "_trange.html" %}
+  {% if home %}
+  <div class="flex flex-wrap items-center gap-x-4 gap-y-1 font-body-sm text-body-sm text-on-surface-variant">
+    <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" id="show-home" class="accent-primary" checked><span class="material-symbols-outlined text-[15px] text-tertiary">home</span>casa · convencional</label>
+    {% if home.series|length > 1 %}<label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" id="show-home2" class="accent-primary"><span class="material-symbols-outlined text-[15px] text-outline">dark_mode</span>casa · branca fora ponta</label>{% endif %}
+    <span id="range"></span>
+  </div>
+  {% endif %}
+  <div id="panels" class="flex flex-col gap-2">{% if not evo %}<div class="rounded-lg bg-surface-container-low p-4 text-center font-body-sm text-body-sm text-on-surface-variant">Sem tarifa em R$/kWh registrada para esta estação.</div>{% endif %}</div>
+  <script id="data" type="application/json">{{ evo|tojson }}</script>
+  <script id="home" type="application/json">{{ (home.series if home else [])|tojson }}</script>
+  <script id="rng" type="application/json">{{ {"start": rng.start, "end": rng.end}|tojson }}</script>
+</section>
+
+<!-- tomadas -->
+<div class="flex items-center justify-between mt-5 mb-2 px-1">
+  <h2 class="font-display text-headline-md text-on-surface flex items-center gap-1.5"><span class="material-symbols-outlined text-[20px] text-primary">ev_station</span>Tomadas</h2>
+  <span class="font-label-sm text-label-sm text-outline">{{ connectors|length }} no local</span>
+</div>
+<div class="flex flex-col gap-3">
+{% for c in connectors %}
+{% set cur = c.tariffs[0] if c.tariffs and c.tariffs[0].valid_to is none else none %}
+<section class="card flex flex-col gap-2.5">
+  <div class="flex items-start justify-between gap-2">
+    <div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="font-display text-headline-md text-on-surface">Tomada {{ c.external_id }}</span>
+        <span class="chip text-primary font-bold">{{ c.plug_type or "?" }}</span>
+        {% if c.power_kw is not none and c.power_kw <= settings.min_power_kw %}<span class="pill-muted !py-0">lenta</span>{% endif %}
+      </div>
+      <span class="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-1 mt-0.5"><span class="material-symbols-outlined text-[15px] text-secondary">bolt</span>{{ c.current_type or "" }} {{ c.power_kw|num }} kW</span>
+    </div>
+    <div class="text-right shrink-0">
+      {% if c.kind == "available" %}<span class="pill-ok"><span class="dot"></span>livre</span>
+      {% elif c.kind == "busy" %}<span class="pill-warn"><span class="dot"></span>em uso{% if c.soc_pct is not none %}: carro a {{ c.soc_pct }} %{% endif %}</span>
+      {% elif c.kind == "down" %}<span class="pill-bad"><span class="dot"></span>{{ "offline" if c.online is false else "fora do ar" }}</span>
+      {% else %}<span class="pill-muted">estado ?</span>{% endif %}
+      <span class="block font-label-sm text-label-sm text-outline mt-1">{% if c.kind == "busy" and c.charging_since %}desde {{ c.charging_since|dt("%H:%M") }} ({{ c.charging_since|ago }}) · {% endif %}visto {{ c.last_seen_at|ago }}</span>
+    </div>
+  </div>
+  {% if cur %}
+  <div class="grid grid-cols-3 gap-2 rounded-lg bg-surface-container-low p-2 text-center">
+    <div><span class="block font-label-sm text-label-sm uppercase tracking-wider text-outline">Preço</span>
+      <span class="font-display text-headline-md font-bold tabular-nums {% if cur.is_free and not cur.price_kwh %}text-secondary{% else %}text-on-surface{% endif %}">{% if cur.is_free and not cur.price_kwh %}grátis{% elif cur.price_kwh is not none %}{{ cur.price_kwh|brl }}{% elif cur.price_min %}{{ cur.price_min|brl(3) }}{% else %}—{% endif %}</span>
+      <span class="block font-label-sm text-label-sm text-outline">{% if cur.price_kwh is none and cur.price_min %}/ min{% else %}/ kWh{% endif %}</span></div>
+    <div><span class="block font-label-sm text-label-sm uppercase tracking-wider text-outline">Ativação</span>
+      <span class="font-display text-headline-md font-bold text-on-surface tabular-nums">{% if cur.flat_fee and cur.flat_fee > 0 %}{{ cur.flat_fee|brl }}{% else %}—{% endif %}</span>
+      <span class="block font-label-sm text-label-sm {% if cur.flat_fee_waived_above_kwh %}text-secondary{% else %}text-outline{% endif %}">{% if cur.flat_fee_waived_above_kwh %}isenta ≥ {{ cur.flat_fee_waived_above_kwh|num }} kWh{% elif cur.flat_fee and cur.flat_fee > 0 %}por sessão{% else %}sem taxa{% endif %}</span></div>
+    <div><span class="block font-label-sm text-label-sm uppercase tracking-wider text-outline">Ociosidade</span>
+      <span class="font-display text-headline-md font-bold tabular-nums {% if cur.idle_fee and cur.idle_fee > 0 %}text-on-surface{% else %}text-secondary{% endif %}">{% if cur.idle_fee and cur.idle_fee > 0 %}{{ cur.idle_fee|brl }}{% else %}grátis{% endif %}</span>
+      <span class="block font-label-sm text-label-sm text-outline">{% if cur.idle_fee and cur.idle_fee > 0 %}{% if cur.idle_period_min == 1 %}por min{% elif cur.idle_period_min %}a cada {{ cur.idle_period_min }} min{% endif %}{% if cur.idle_grace_min %} após {{ cur.idle_grace_min }} min{% endif %}{% else %}sem taxa{% endif %}</span></div>
+  </div>
+  {% endif %}
+  <div>
+    <div class="flex items-center justify-between mb-1.5 px-0.5">
+      <span class="font-label-sm text-label-sm uppercase tracking-wider text-outline">Histórico de tarifas</span>
+      {% if cur and cur.windows %}<span class="font-label-sm text-label-sm text-primary">{{ cur.windows|length }} janelas de horário</span>{% endif %}
+    </div>
+    <div class="overflow-x-auto rounded-lg bg-surface-container-lowest/70">
+      <table class="tbl">
+        <thead><tr><th>Vigência</th><th class="r">Preço/kWh</th><th class="r">Ativação</th><th>Ociosidade</th></tr></thead>
+        <tbody>
+        {% for t in c.tariffs %}
+        <tr class="{% if t.valid_to is none %}bg-surface-container-high/30{% else %}text-on-surface-variant{% endif %}">
+          <td>
+            <div class="flex items-center gap-1 flex-wrap">
+              <span class="font-mono text-[11px] {% if t.valid_to is none %}text-secondary font-bold{% endif %}">{{ t.valid_from|date }}</span>
+              <span class="material-symbols-outlined text-[12px] text-outline">arrow_forward</span>
+              {% if t.valid_to %}<span class="font-mono text-[11px]">{{ t.valid_to|date }}</span>{% else %}<span class="pill-ok !py-0 !px-1.5 uppercase">vigente</span>{% endif %}
+            </div>
+            <span class="block text-[10px] text-outline mt-0.5">confirmado {{ t.last_confirmed_at|date }}</span>
+            {% if t.windows %}<div class="text-[10px] text-outline mt-0.5">{% for w in t.windows %}{{ w.start_time }}–{{ w.end_time }}: {{ w.price_kwh|brl }}{% if w.is_default %}*{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+            {% if t.notes %}<div class="text-[10px] text-outline mt-0.5">{{ t.notes }}</div>{% endif %}
+          </td>
+          <td class="r"><span class="font-display font-bold tabular-nums {% if t.valid_to is none %}text-price-display-mobile text-primary{% else %}text-headline-md line-through opacity-75{% endif %}">{% if t.is_free and not t.price_kwh %}<span class="text-secondary no-underline">grátis</span>{% elif t.price_kwh is not none %}{{ t.price_kwh|brl }}{% elif t.price_min %}{{ t.price_min|brl(3) }}/min{% else %}—{% endif %}</span></td>
+          <td class="r">{% if t.flat_fee and t.flat_fee > 0 %}<span class="font-semibold">{{ t.flat_fee|brl }}</span>{% if t.flat_fee_waived_above_kwh %}<span class="block text-[10px] text-secondary">isenta ≥ {{ t.flat_fee_waived_above_kwh|num }} kWh</span>{% endif %}{% else %}—{% endif %}</td>
+          <td>{{ idle_desc(t.idle_fee, t.idle_period_min, t.idle_grace_min) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-on-surface-variant">sem tarifa registrada</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endfor %}
+</div>
+
+<a class="btn-ghost w-full mt-4" href="/{% if mun %}?m={{ mun.id }}{% endif %}" data-back><span class="material-symbols-outlined text-[18px] text-primary">arrow_back</span>Voltar para a lista de preços</a>
+{% endblock %}
+{% block scripts %}
+<script src="/static/evochart.js"></script>
+<script>
+evoChart();
+// iPhone/iPad: abre o Apple Mapas (que também oferece o Google Maps se instalado); resto: link universal do Google Maps
+(function () {
+  if (/iPad|iPhone|iPod/.test(navigator.userAgent)) document.querySelectorAll('a[data-dest]').forEach(a => {
+    const d = encodeURIComponent(a.dataset.dest), n = encodeURIComponent(a.dataset.name);
+    a.href = a.dataset.dir ? `https://maps.apple.com/?daddr=${d}&q=${n}` : `https://maps.apple.com/?ll=${d}&q=${n}`;
+  });
+  const sh = document.getElementById('btn-share');
+  if (navigator.share) { sh.hidden = false; sh.addEventListener('click', () => navigator.share({title: document.title, url: location.href}).catch(() => {})); }
+})();
+</script>
 {% endblock %}

@@ -3,8 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0f172a">
-<meta name="description" content="Preços e histórico dos carregadores rápidos pagos do município escolhido.">
+<meta name="theme-color" content="#0b1326" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f8f9ff" media="(prefers-color-scheme: light)">
+<meta name="description" content="Preços e histórico dos carregadores de VE do município escolhido.">
+<script>/* tema antes da primeira pintura: system (padrão) | light | dark */
+(function(){try{var q=new URLSearchParams(location.search).get('theme');if(q==='light'||q==='dark')localStorage.setItem('theme',q);else if(q==='system')localStorage.removeItem('theme');var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;}catch(e){}})();</script>
+<link rel="stylesheet" href="/static/app.css?v={{ static_v }}">
 <!-- PWA -->
 <link rel="manifest" href="/static/pwa/manifest.webmanifest">
 <link rel="icon" href="/static/pwa/icon.svg" type="image/svg+xml">
@@ -13,177 +17,80 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="evprices">
-<title>{% block title %}evprices{% endblock %}</title>
-<style>
-  :root {
-    --bg: #f5f6f8; --card: #ffffff; --fg: #111827; --muted: #6b7280; --line: #e5e7eb;
-    --accent: #0ea5e9; --good: #16a34a; --warn: #d97706; --bad: #dc2626; --chip: #eef2ff;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #0b1220; --card: #111a2e; --fg: #e5e7eb; --muted: #94a3b8; --line: #1f2a44; --chip: #1e293b; }
-  }
-  * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; }
-  body { margin: 0; background: var(--bg); color: var(--fg);
-         font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-         padding-bottom: env(safe-area-inset-bottom); }
-  a { color: inherit; text-decoration: none; }
-  header.top { position: sticky; top: 0; z-index: 10; background: var(--card); border-bottom: 1px solid var(--line);
-               padding: 10px 16px; display: flex; align-items: center; gap: 12px; }
-  header.top h1 { font-size: 18px; margin: 0; flex: 1; }
-  header.top nav a { font-size: 14px; color: var(--muted); margin-left: 12px; }
-  header.top nav a.install-btn { color: var(--accent); font-weight: 600; }
-  header.top nav a.active { color: var(--fg); font-weight: 600; }
-  /* celular: abas fixas embaixo + folha "Mais"; a barra de cima só mostra o título */
-  nav.tabs { display: none; }
-  @media (max-width: 719px) {
-    header.top nav { display: none; }
-    body { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
-    nav.tabs { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
-               background: var(--card); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
-    nav.tabs a, nav.tabs button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px 6px;
-                                  font-size: 11px; color: var(--muted); background: none; border: 0; font-family: inherit; }
-    nav.tabs .ico { font-size: 20px; line-height: 1; }
-    nav.tabs .active { color: var(--accent); font-weight: 600; }
-  }
-  .sheet { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; }
-  .sheet[hidden] { display: none; }
-  .sheet .panel { width: 100%; background: var(--card); border-radius: 16px 16px 0 0; padding: 8px 8px calc(12px + env(safe-area-inset-bottom)); }
-  .sheet .panel a, .sheet .panel button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 12px; font-size: 16px;
-                                          color: var(--fg); background: none; border: 0; border-radius: 10px; font-family: inherit; text-align: left; }
-  .sheet .panel a:active, .sheet .panel button:active { background: var(--chip); }
-  .sheet .panel .active { color: var(--accent); font-weight: 600; }
-  .sheet .panel .install-btn { color: var(--accent); font-weight: 600; }
-  main { padding: 12px 16px 32px; max-width: 720px; margin: 0 auto; }
-  .muted { color: var(--muted); font-size: 13px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px;
-          display: block; }
-  .card:active { opacity: .85; }
-  .row { display: flex; align-items: baseline; gap: 8px; }
-  .row .grow { flex: 1; min-width: 0; }
-  .name { font-weight: 600; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .logo { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
-          border-radius: 8px; font-size: 10px; font-weight: 800; letter-spacing: .02em; flex: none;
-          box-shadow: 0 0 0 1px rgba(0,0,0,.08) inset; }
-  img.logo { background: #fff; object-fit: contain; padding: 3px; box-sizing: border-box; }
-  .brandline { display: flex; align-items: center; gap: 8px; }
-  .chip { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--chip);
-          color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
-  .opt { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 8px 0; border-top: 1px solid var(--line); }
-  .opt:first-of-type { border-top: 0; }
-  .price { font-size: 22px; font-weight: 700; text-align: right; white-space: nowrap; }
-  .price small { font-size: 12px; font-weight: 400; color: var(--muted); }
-  .total { text-align: right; font-size: 13px; color: var(--muted); white-space: nowrap; }
-  .total b { color: var(--fg); }
-  .plug { font-weight: 600; font-size: 14px; }
-  .fees { font-size: 12px; color: var(--muted); }
-  .fee-bad { color: var(--warn); }
-  .state-Available { color: var(--good); } .state-Charging, .state-Busy { color: var(--warn); }
-  .state-Unavailable, .state-Offline { color: var(--bad); }
-  form.scenario { display: grid; grid-template-columns: repeat(3, 1fr) auto; gap: 8px; margin-bottom: 14px; }
-  form.scenario label { font-size: 11px; color: var(--muted); display: block; }
-  form.scenario input { width: 100%; font-size: 16px; padding: 8px; border: 1px solid var(--line); border-radius: 10px;
-                        background: var(--card); color: var(--fg); }
-  form.scenario button { align-self: end; padding: 9px 14px; font-size: 15px; border: 0; border-radius: 10px;
-                         background: var(--accent); color: #fff; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { font-size: 12px; color: var(--muted); font-weight: 600; }
-  td.r, th.r { text-align: right; white-space: nowrap; }
-  .tbl { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .current { color: var(--good); font-weight: 600; }
-  h2 { font-size: 15px; margin: 18px 0 8px; }
-  @media (min-width: 720px) { .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; } .grid .card { margin: 0; min-width: 0; } }
-  /* seletor de município (busca por digitação) */
-  .muniwrap { position: relative; }
-  .muniwrap input[data-muni] { width: 100%; font-size: 16px; padding: 9px; border: 1px solid var(--line);
-                               border-radius: 10px; background: var(--card); color: var(--fg); }
-  .munilist { position: absolute; left: 0; right: 0; top: 100%; z-index: 20; background: var(--card); border: 1px solid var(--line);
-              border-radius: 10px; margin-top: 4px; max-height: 260px; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
-  .muniopt { padding: 9px 12px; cursor: pointer; font-size: 15px; }
-  .muniopt.active, .muniopt:hover { background: var(--chip); }
-  .muniopt .muted { margin-left: 4px; }
-  .btn { display: inline-block; padding: 9px 14px; font-size: 15px; border: 0; border-radius: 10px; cursor: pointer;
-         background: var(--accent); color: #fff; }
-  .btn.ghost { background: var(--chip); color: var(--fg); }
-  .btn.small { font-size: 13px; padding: 6px 10px; }
-  .btn:disabled { opacity: .5; }
-  .stcard { position: relative; }
-  .stcard .cover { position: absolute; inset: 0; z-index: 1; border-radius: 14px; }
-  .stcard .cover:active { background: rgba(0,0,0,.04); }
-  .star { position: absolute; top: 8px; right: 8px; z-index: 2; width: 36px; height: 36px; border: 0; border-radius: 50%;
-          background: var(--chip); color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
-  .star.on { color: #eda100; }
-  .star.inline { position: static; flex: none; }
-  .stcard .brandline { padding-right: 36px; }
-  .btn.active { background: var(--accent); color: #fff; }
-  a.maplink { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
-  .munbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .munbar .name { font-size: 18px; }
-  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--muted); border-top-color: transparent;
-          border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  #locate-result { margin-top: 8px; }
-  /* atalho para o login do operador (card e página da estação) */
-  a.keylink { position: relative; z-index: 2; display: inline-block; margin-top: 6px; padding: 4px 10px; border-radius: 999px;
-              background: var(--chip); color: var(--warn); font-size: 12px; font-weight: 600; }
-  a.keylink.ok { color: var(--muted); font-weight: 400; }
-  form.cred { display: grid; gap: 8px; }
-  form.cred label { font-size: 12px; color: var(--muted); display: block; }
-  form.cred input { width: 100%; font-size: 16px; padding: 9px; border: 1px solid var(--line); border-radius: 10px;
-                    background: var(--card); color: var(--fg); }
-  form.cred .actions { display: flex; gap: 8px; align-items: center; }
-  .ok-msg { color: var(--good); font-size: 14px; }
-  .divider { display: flex; align-items: center; gap: 12px; margin: 22px 0 8px; color: var(--muted); font-size: 13px;
-             text-transform: uppercase; letter-spacing: .06em; }
-  .divider::before, .divider::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
-  .states { font-size: 12px; }
-  .plug .chip { margin-left: 4px; vertical-align: 1px; }
-  /* viagens */
-  .grid3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
-  form.cred select { width: 100%; font-size: 16px; padding: 9px; border: 1px solid var(--line); border-radius: 10px;
-                     background: var(--card); color: var(--fg); }
-  form.cred input[type=checkbox] { width: auto; margin-right: 4px; }
-  form.cred input.derived { color: var(--muted); border-style: dashed; }   /* campo derivado (rótulo "="), ainda editável */
-  form.cred label:has(input[type=checkbox]) { display: inline-flex; align-items: center; font-size: 14px; color: var(--fg); }
-  .tripsel label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
-  .timeline { position: relative; padding-left: 18px; }
-  .timeline::before { content: ""; position: absolute; left: 6px; top: 8px; bottom: 8px; border-left: 2px dashed var(--line); }
-  .tl-node { position: relative; padding: 6px 0 10px; }
-  .tl-dot { position: absolute; left: -17px; top: 11px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
-  .tl-stop { position: relative; }
-  .tl-stop::before { content: ""; position: absolute; left: -16px; top: 18px; width: 10px; height: 10px; border-radius: 50%;
-                     background: var(--card); border: 2px solid var(--accent); }
-</style>
+<title>{% block title %}{% block page_title %}evprices{% endblock %} — evprices{% endblock %}</title>
+{% block head %}{% endblock %}
 </head>
-<body>
-<header class="top">
-  <h1><a href="/">⚡ evprices</a></h1>
-  <nav data-nav><a href="/">Preços</a><a href="/evolucao">Evolução</a><a href="/favoritas">★ Favoritas</a><a href="/viagens">Viagens</a><a href="/municipios">Municípios</a><a href="/runs">Coletas</a><a href="/operadores" title="login dos operadores">🔑 Operadores</a><a href="/veiculos">🚗 Veículos</a><a href="#" class="install-btn" hidden title="instalar como app">📲 Instalar</a></nav>
+<body class="min-h-screen flex flex-col">
+{% set owner = request.state.owner %}
+<header class="fixed top-0 inset-x-0 z-40 bg-surface/85 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.25)] pt-safe">
+  <div class="h-14 px-margin max-w-[960px] mx-auto flex items-center justify-between gap-3">
+    <a href="/" class="flex items-center gap-1.5 min-w-0">
+      <span class="material-symbols-outlined text-primary text-[22px] fill">bolt</span>
+      <span class="font-display text-headline-md tracking-tight text-on-surface">evprices</span>
+      <span class="text-outline-variant hidden sm:inline">|</span>
+      <span class="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant truncate hidden sm:inline">{{ self.page_title() }}</span>
+    </a>
+    <nav class="hidden md:flex items-center gap-1" data-nav>
+      <a href="/" class="px-3 py-1.5 rounded-lg font-label-md text-label-md text-on-surface-variant hover:text-on-surface">Preços</a>
+      <a href="/viagens" class="px-3 py-1.5 rounded-lg font-label-md text-label-md text-on-surface-variant hover:text-on-surface">Viagens</a>
+      <a href="/evolucao" class="px-3 py-1.5 rounded-lg font-label-md text-label-md text-on-surface-variant hover:text-on-surface">Evolução</a>
+      <a href="/favoritas" class="px-3 py-1.5 rounded-lg font-label-md text-label-md text-on-surface-variant hover:text-on-surface">Favoritas</a>
+      <button type="button" class="px-3 py-1.5 rounded-lg font-label-md text-label-md text-on-surface-variant hover:text-on-surface flex items-center gap-1" data-more-btn>
+        <span class="material-symbols-outlined text-[18px]">menu</span>Mais</button>
+    </nav>
+    <div class="flex items-center gap-2 shrink-0">
+      {% block header_actions %}{% endblock %}
+      {% if owner %}<a href="/admin/logout" class="pill-info" title="sair da área do dono"><span class="material-symbols-outlined text-[14px]">lock_open</span>dono</a>{% endif %}
+    </div>
+  </div>
 </header>
-<nav class="tabs" data-nav aria-label="principal">
-  <a href="/"><span class="ico">⚡</span>Preços</a>
-  <a href="/viagens"><span class="ico">🧳</span>Viagens</a>
-  <a href="/evolucao"><span class="ico">📈</span>Evolução</a>
-  <a href="/favoritas"><span class="ico">★</span>Favoritas</a>
-  <button type="button" id="more-btn"><span class="ico">☰</span>Mais</button>
+
+<main class="flex-1 w-full max-w-[960px] mx-auto px-margin pb-28 md:pb-10" style="padding-top: calc(3.5rem + 0.75rem + env(safe-area-inset-top, 0px))">
+<div id="install-help" class="card-low mb-space-md" hidden></div>
+{% block content %}{% endblock %}
+</main>
+
+<!-- celular: abas fixas embaixo -->
+<nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-surface/90 backdrop-blur-xl shadow-[0_-4px_16px_rgba(0,0,0,0.35)] pb-safe" data-nav aria-label="principal">
+  <div class="grid grid-cols-5 items-center h-16 px-space-xs">
+    <a href="/" class="tab-btn"><span class="material-symbols-outlined text-[22px]">bolt</span>Preços</a>
+    <a href="/viagens" class="tab-btn"><span class="material-symbols-outlined text-[22px]">luggage</span>Viagens</a>
+    <a href="/evolucao" class="tab-btn"><span class="material-symbols-outlined text-[22px]">trending_up</span>Evolução</a>
+    <a href="/favoritas" class="tab-btn"><span class="material-symbols-outlined text-[22px]">star</span>Favoritas</a>
+    <button type="button" class="tab-btn" data-more-btn><span class="material-symbols-outlined text-[22px]">menu</span>Mais</button>
+  </div>
 </nav>
+
+<!-- folha "Mais" -->
 <div class="sheet" id="more" hidden>
   <div class="panel" data-nav>
-    <a href="/municipios">🗺️ Municípios</a>
-    <a href="/runs">🕓 Coletas</a>
-    <a href="/operadores">🔑 Operadores (login dos apps)</a>
-    <a href="/veiculos">🚗 Veículos</a>
-    <a href="#" class="install-btn" hidden>📲 Instalar como app</a>
-    <button type="button" id="more-close">✕ Fechar</button>
+    <div class="flex items-center justify-between">
+      <span class="font-display text-headline-md text-on-surface">Mais</span>
+      <button type="button" class="w-9 h-9 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface-variant" data-more-close aria-label="fechar"><span class="material-symbols-outlined text-[20px]">close</span></button>
+    </div>
+    <a href="/municipios" class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-surface-container-high"><span class="material-symbols-outlined text-primary">map</span><span class="font-body-lg text-body-lg">Municípios</span></a>
+    <a href="/veiculos" class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-surface-container-high"><span class="material-symbols-outlined text-primary">electric_car</span><span class="font-body-lg text-body-lg">Veículos</span></a>
+    <a href="#" class="install-btn flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-surface-container-high" hidden><span class="material-symbols-outlined text-primary">install_mobile</span><span class="font-body-lg text-body-lg">Instalar como app</span></a>
+    <div class="flex items-center justify-between px-3 py-2">
+      <span class="flex items-center gap-3"><span class="material-symbols-outlined text-primary">contrast</span><span class="font-body-lg text-body-lg">Tema</span></span>
+      <div class="inline-flex p-0.5 bg-surface-container-lowest rounded-full" data-theme-picker>
+        <button type="button" data-theme="system" class="px-3 py-1 rounded-full font-label-sm text-label-sm">Auto</button>
+        <button type="button" data-theme="light" class="px-3 py-1 rounded-full font-label-sm text-label-sm">Claro</button>
+        <button type="button" data-theme="dark" class="px-3 py-1 rounded-full font-label-sm text-label-sm">Escuro</button>
+      </div>
+    </div>
+    <div class="divider mt-1"><span>Área do dono</span></div>
+    {% set lock = '' if owner else '<span class="material-symbols-outlined text-[16px] text-outline ml-auto">lock</span>' %}
+    <a href="/admin/acessos" class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-surface-container-high"><span class="material-symbols-outlined text-primary">groups</span><span class="font-body-lg text-body-lg">Acessos</span>{{ lock|safe }}</a>
+    <a href="/operadores" class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-surface-container-high"><span class="material-symbols-outlined text-primary">key</span><span class="font-body-lg text-body-lg">Operadores</span>{{ lock|safe }}</a>
+    <a href="/runs" class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-surface-container-high"><span class="material-symbols-outlined text-primary">history</span><span class="font-body-lg text-body-lg">Coletas</span>{{ lock|safe }}</a>
+    {% if owner %}<a href="/admin/logout" class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-surface-container-high text-on-surface-variant"><span class="material-symbols-outlined">logout</span><span class="font-body-lg text-body-lg">Sair da área do dono</span></a>{% endif %}
   </div>
 </div>
-<main>
-<div class="card" id="install-help" hidden></div>
-{% block content %}{% endblock %}</main>
+
 <script>
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw', {scope: '/'}).catch(() => {});
-// "← voltar": volta no histórico quando há de onde voltar; senão segue o href
+// "voltar": volta no histórico quando há de onde voltar; senão segue o href
 document.addEventListener('click', e => {
   const a = e.target.closest('a[data-back]'); if (!a) return;
   if (history.length > 1 && document.referrer && new URL(document.referrer).origin === location.origin) { e.preventDefault(); history.back(); }
@@ -194,14 +101,27 @@ document.addEventListener('click', e => {
   document.querySelectorAll('[data-nav] a[href^="/"]').forEach(a => {
     const h = a.getAttribute('href');
     const on = h === '/' ? (path === '/' || path.startsWith('/station/')) : path === h || path.startsWith(h + '/');
-    if (on) a.classList.add('active');
+    if (on) { a.classList.add('active', 'text-primary', 'font-semibold'); }
   });
   const more = document.getElementById('more');
-  document.getElementById('more-btn').addEventListener('click', () => { more.hidden = false; });
-  document.getElementById('more-close').addEventListener('click', () => { more.hidden = true; });
+  const inMore = ['/municipios', '/veiculos', '/admin', '/operadores', '/runs'].some(p => path.startsWith(p));
+  if (inMore) document.querySelectorAll('[data-more-btn]').forEach(b => b.classList.add('active', 'text-primary'));
+  document.querySelectorAll('[data-more-btn]').forEach(b => b.addEventListener('click', () => { more.hidden = false; }));
+  document.querySelectorAll('[data-more-close]').forEach(b => b.addEventListener('click', () => { more.hidden = true; }));
   more.addEventListener('click', e => { if (e.target === more) more.hidden = true; });
+  // tema
+  const pick = document.querySelector('[data-theme-picker]');
+  const paint = () => { let t = 'system'; try { t = localStorage.getItem('theme') || 'system'; } catch (e) {}
+    pick.querySelectorAll('button').forEach(b => { const on = b.dataset.theme === t;
+      b.classList.toggle('bg-surface-container', on); b.classList.toggle('text-primary', on); b.classList.toggle('text-on-surface-variant', !on); }); };
+  pick.addEventListener('click', e => { const b = e.target.closest('button[data-theme]'); if (!b) return;
+    try { if (b.dataset.theme === 'system') localStorage.removeItem('theme'); else localStorage.setItem('theme', b.dataset.theme); } catch (err) {}
+    if (b.dataset.theme === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = b.dataset.theme; paint(); });
+  paint();
+  // PWA instalado: marca por cookie para a contagem de acessos separar "app" de "navegador"
+  if (matchMedia('(display-mode: standalone)').matches || navigator.standalone === true) document.cookie = 'pwa=1; max-age=31536000; path=/; SameSite=Lax';
 })();
-// 📲 Instalar: Chrome/Android disparam beforeinstallprompt (só em HTTPS); iPhone só pelo menu Compartilhar.
+// Instalar: Chrome/Android disparam beforeinstallprompt (só em HTTPS); iPhone só pelo menu Compartilhar.
 (function () {
   const btns = [...document.querySelectorAll('.install-btn')], help = document.getElementById('install-help');
   const show = v => btns.forEach(b => { b.hidden = !v; });
@@ -218,21 +138,30 @@ document.addEventListener('click', e => {
     if (deferred) { deferred.prompt(); const r = await deferred.userChoice; if (r.outcome === 'accepted') show(false); deferred = null; return; }
     help.hidden = !help.hidden; window.scrollTo({top: 0, behavior: 'smooth'});
     help.innerHTML = !window.isSecureContext
-      ? '<b>Instalar como app</b><div class="muted">O navegador só oferece a instalação em <b>HTTPS</b>. Abra o evprices pela URL do túnel (https://…) e toque em 📲 Instalar de novo. Pelo IP da rede local (http://) não é possível.</div>'
+      ? '<b class="font-display text-headline-md">Instalar como app</b><div class="text-on-surface-variant font-body-sm text-body-sm mt-1">O navegador só oferece a instalação em <b>HTTPS</b>. Abra o evprices pela URL do túnel (https://…) e toque em Instalar de novo. Pelo IP da rede local (http://) não é possível.</div>'
       : ios
-      ? '<b>Instalar no iPhone/iPad</b><div class="muted">No Safari, toque em <b>Compartilhar</b> (quadrado com seta) → <b>Adicionar à Tela de Início</b> → Adicionar. O app abre em tela cheia com ícone próprio.</div>'
-      : '<b>Instalar como app</b><div class="muted">No menu do navegador (⋮) toque em <b>Instalar app</b> / <b>Adicionar à tela inicial</b>. Se a opção não aparecer, recarregue a página uma vez e tente de novo.</div>';
+      ? '<b class="font-display text-headline-md">Instalar no iPhone/iPad</b><div class="text-on-surface-variant font-body-sm text-body-sm mt-1">No Safari, toque em <b>Compartilhar</b> (quadrado com seta) → <b>Adicionar à Tela de Início</b> → Adicionar. O app abre em tela cheia com ícone próprio.</div>'
+      : '<b class="font-display text-headline-md">Instalar como app</b><div class="text-on-surface-variant font-body-sm text-body-sm mt-1">No menu do navegador (⋮) toque em <b>Instalar app</b> / <b>Adicionar à tela inicial</b>. Se a opção não aparecer, recarregue a página uma vez e tente de novo.</div>';
   }));
 })();
+// folhas (bottom sheets): [data-open="id"] abre #id; [data-close] ou toque no fundo fecha
+document.addEventListener('click', e => {
+  const o = e.target.closest('[data-open]'); if (o) { const s = document.getElementById(o.dataset.open); if (s) { s.hidden = false; const f = s.querySelector('input:not([type=hidden]),select'); if (f && matchMedia('(min-width: 640px)').matches) f.focus(); } return; }
+  const c = e.target.closest('[data-close]'); if (c) { const s = c.closest('.sheet'); if (s) s.hidden = true; return; }
+  if (e.target.classList && e.target.classList.contains('sheet')) e.target.hidden = true;
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.sheet:not([hidden])').forEach(s => { s.hidden = true; }); });
 // ★ favorita: alterna no servidor (uma lista só, igual em todos os aparelhos)
 document.addEventListener('click', async e => {
   const b = e.target.closest('button[data-fav]'); if (!b) return;
-  e.preventDefault(); b.disabled = true;
+  e.preventDefault(); e.stopPropagation(); b.disabled = true;
   try {
     const r = await fetch('/api/station/' + b.dataset.fav + '/favorite', {method: 'POST'});
-    if (r.ok) { const j = await r.json(); b.classList.toggle('on', j.favorite); b.setAttribute('aria-pressed', j.favorite); }
+    if (r.ok) { const j = await r.json(); b.classList.toggle('on', j.favorite); b.setAttribute('aria-pressed', j.favorite);
+      const ic = b.querySelector('.material-symbols-outlined'); if (ic) { ic.classList.toggle('fill', j.favorite); ic.classList.toggle('text-tertiary', j.favorite); ic.classList.toggle('text-outline', !j.favorite); } }
   } finally { b.disabled = false; }
 });
 </script>
+{% block scripts %}{% endblock %}
 </body>
 </html>

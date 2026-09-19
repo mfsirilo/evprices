@@ -1,8 +1,8 @@
-{# Ícone 🔑 por estação. Espera `op` (operators.state da plataforma), `sid` (station id), `priced` (tem preço?) e opcional `alt` (estação equivalente com preço).
-   Nunca dispara chamada à API: leva à tela de configuração. #}
-{% if not op.configured %}<a class="keylink" href="/station/{{ sid }}/acesso">🔑 preço só com login {{ op.name }} — configurar</a>
-{% elif not priced and op.waiting_first %}<a class="keylink ok" href="/station/{{ sid }}/acesso">⏳ {{ op.name }}: aguardando a primeira coleta</a>
-{% elif not priced and alt %}<a class="keylink" href="/station/{{ sid }}/acesso">⚠️ preço desconhecido — provável cadastro antigo; ver {{ alt.name }} ({{ alt.source }}, {{ alt.price_kwh|brl }}/kWh)</a>
-{% elif not priced %}<a class="keylink" href="/station/{{ sid }}/acesso">⚠️ preço desconhecido — configurar acesso</a>
-{% elif op.last_error %}<a class="keylink" href="/station/{{ sid }}/acesso">⚠️ {{ op.name }}: última sincronização falhou</a>
-{% else %}<a class="keylink ok" href="/station/{{ sid }}/acesso">🔑 {{ op.name }} (app) · sincronizado {{ op.last_success_at|dt("%H:%M") }}</a>{% endif %}
+{# Acesso ao preço (plataformas com login). Espera `op` (operators.state), `sid`, `priced`, opcional `alt`. Nunca chama a API. #}
+{% if not op.configured %}{% set cls, ico, txt = "pill-warn", "key", "preço só com login " ~ op.name ~ " — configurar" %}
+{% elif not priced and op.waiting_first %}{% set cls, ico, txt = "pill-muted", "hourglass_top", op.name ~ ": aguardando a primeira coleta" %}
+{% elif not priced and alt %}{% set cls, ico, txt = "pill-warn", "warning", "preço desconhecido — provável cadastro antigo; ver " ~ alt.name ~ " (" ~ alt.source ~ ", " ~ alt.price_kwh|brl ~ "/kWh)" %}
+{% elif not priced %}{% set cls, ico, txt = "pill-warn", "warning", "preço desconhecido — configurar acesso" %}
+{% elif op.last_error %}{% set cls, ico, txt = "pill-warn", "sync_problem", op.name ~ ": última sincronização falhou" %}
+{% else %}{% set cls, ico, txt = "pill-muted", "key", op.name ~ " (app) · sincronizado " ~ op.last_success_at|dt("%H:%M") %}{% endif %}
+<a class="{{ cls }} relative z-10 !whitespace-normal !font-semibold" href="/station/{{ sid }}/acesso"><span class="material-symbols-outlined text-[14px]">{{ ico }}</span>{{ txt }}</a>

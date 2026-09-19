@@ -5,3 +5,4 @@ psycopg[binary]==3.2.3
 httpx==0.28.1
 xlrd==2.0.1
 python-multipart==0.0.20
+maxminddb==2.6.2

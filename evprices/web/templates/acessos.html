@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{# icons: install_mobile phone_iphone smartphone laptop location_on link devices language web #}
+{% block page_title %}Acessos{% endblock %}
+{% block content %}
+{% set plabel = {"24h": "24 h", "7d": "7 d", "30d": "30 d", "3m": "3 m", "1a": "1 a"} %}
+<div class="flex items-center justify-between gap-2 mb-1">
+  <div class="flex items-center gap-2 flex-wrap"><h1 class="font-display text-headline-lg-mobile text-on-surface">Acessos</h1><span class="pill-info"><span class="material-symbols-outlined text-[13px]">lock</span>área do dono</span></div>
+  <a class="btn-ghost btn-sm" href="/admin/logout"><span class="font-label-md text-label-md">Sair</span><span class="material-symbols-outlined text-[16px]">logout</span></a>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-3">Contagem de páginas abertas (rotas <span class="kbd">/api/*</span> e arquivos não contam). Seus próprios acessos ficam de fora dos totais.{% if first %} Contando desde {{ first|dt }}.{% endif %}</p>
+
+{% if not first %}
+<div class="card flex flex-col items-center text-center gap-2 py-8">
+  <span class="material-symbols-outlined text-[40px] text-outline">groups</span>
+  <div class="font-display text-headline-md text-on-surface">Os acessos começam a ser contados a partir de agora</div>
+  <div class="font-body-sm text-body-sm text-on-surface-variant">Cada página aberta por qualquer visitante entra aqui.</div>
+</div>
+{% endif %}
+
+<!-- 1. agora -->
+<section class="card flex flex-col gap-space-md mb-3">
+  <div class="flex items-center justify-between">
+    <span class="flex items-center gap-2 font-label-md text-label-md uppercase tracking-wider text-secondary"><span class="relative flex h-2.5 w-2.5"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75"></span><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-secondary"></span></span>Agora · últimos 5 min</span>
+    <span class="font-body-sm text-body-sm text-on-surface-variant">atualiza a cada 15 s</span>
+  </div>
+  <div class="flex items-baseline gap-2"><span class="font-display text-price-display text-primary tabular-nums" id="now-n">{{ now|length }}</span><span class="font-display text-headline-md text-on-surface">visitante(s) ativo(s)</span></div>
+  <div class="flex flex-col gap-space-sm" id="now-list">
+    {% for r in now %}
+    <article class="flex flex-col gap-1.5 p-3 rounded-lg bg-surface-container-high">
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 min-w-0">{% if r.visitor == me %}<span class="pill-ok !py-0 uppercase">você</span>{% elif r.is_owner %}<span class="pill-muted !py-0 uppercase">dono</span>{% else %}<span class="dot bg-secondary shrink-0"></span>{% endif %}<span class="font-label-md text-label-md text-on-surface truncate">{{ r.place }}</span></div>
+        <span class="font-body-sm text-body-sm text-on-surface-variant shrink-0">{{ r.ts|ago }}</span>
+      </div>
+      <div class="flex items-center justify-between gap-2 font-body-sm text-body-sm text-on-surface-variant">
+        <span class="flex items-center gap-1.5 min-w-0"><span class="material-symbols-outlined text-[16px]">{% if r.pwa %}install_mobile{% elif r.device == 'ios' %}phone_iphone{% elif r.device == 'android' %}smartphone{% else %}laptop{% endif %}</span><span class="truncate">{{ r.device }} · {{ r.browser }}{% if r.pwa %} · app instalado{% endif %}</span></span>
+        <span class="font-label-sm text-label-sm text-outline font-mono shrink-0">{{ r.ip_masked }}</span>
+      </div>
+      <div class="flex items-center justify-between font-label-sm text-label-sm rounded bg-surface-container-lowest/40 px-2 py-1"><span class="text-on-surface-variant">página atual</span><span class="text-on-surface font-semibold">{{ r.page }}</span></div>
+    </article>
+    {% else %}<div class="font-body-sm text-body-sm text-outline">ninguém além de você nos últimos 5 minutos.</div>{% endfor %}
+  </div>
+</section>
+
+<!-- 2. ao longo do tempo -->
+<section class="card flex flex-col gap-space-md mb-3">
+  <div class="flex items-center justify-between"><h2 class="font-display text-headline-md text-on-surface flex items-center gap-2"><span class="material-symbols-outlined text-primary text-[20px]">schedule</span>Ao longo do tempo</h2><span class="font-label-sm text-label-sm text-on-surface-variant">{{ settings.tz }}</span></div>
+  <div class="flex items-center gap-1.5 overflow-x-auto pb-1">
+    {% for k in periods %}<a class="period-chip {% if ser.period == k %}selected{% endif %}" href="/admin/acessos?p={{ k }}">{{ plabel[k] }}</a>{% endfor %}
+  </div>
+  <div class="grid grid-cols-2 gap-2">
+    <div class="flex flex-col p-2.5 rounded-lg bg-surface-container-low"><span class="font-body-sm text-body-sm text-on-surface-variant">Acessos</span><span class="font-display text-headline-md text-on-surface font-bold tabular-nums">{{ ser.total }}</span>
+      {% if ser.delta_pct is not none %}<span class="font-label-sm text-label-sm {% if ser.delta_pct >= 0 %}text-secondary{% else %}text-tertiary{% endif %}">{{ "↑ +" if ser.delta_pct >= 0 else "↓ " }}{{ ser.delta_pct }} % vs. período anterior</span>{% endif %}</div>
+    <div class="flex flex-col p-2.5 rounded-lg bg-surface-container-low"><span class="font-body-sm text-body-sm text-on-surface-variant">Visitantes únicos</span><span class="font-display text-headline-md text-primary font-bold tabular-nums">{{ ser.unique }}</span>
+      {% if ser.unique %}<span class="font-label-sm text-label-sm text-on-surface-variant">~{{ (ser.total / ser.unique)|round(1)|num }} páginas por visitante</span>{% endif %}</div>
+  </div>
+  {% if ser.peak and ser.peak.n %}
+  <div class="flex items-center gap-2 p-2.5 rounded-lg bg-surface-container-high"><span class="material-symbols-outlined text-tertiary text-[20px]">bolt</span>
+    <div class="flex flex-col min-w-0"><span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Pico</span><span class="font-label-md text-label-md text-on-surface">{% if ser.bucket == 'hour' %}{{ ser.peak.t|dt("%d/%m às %H:00") }}{% elif ser.bucket == 'week' %}semana de {{ ser.peak.t|date }}{% else %}{{ ser.peak.t|date }}{% endif %} · <b class="text-tertiary">{{ ser.peak.n }} acessos</b></span></div></div>
+  {% endif %}
+  <div class="flex flex-col gap-1">
+    <div class="flex items-center justify-between font-label-sm text-label-sm text-on-surface-variant"><span>acessos por {% if ser.bucket == 'hour' %}hora{% elif ser.bucket == 'week' %}semana{% else %}dia{% endif %}</span><span>máx. {{ ser.peak.n if ser.peak else 0 }}</span></div>
+    <div class="rounded-lg bg-surface-container-lowest p-2">
+      <div class="flex items-end gap-px h-28">
+        {% for pt in ser.points %}<div class="flex-1 rounded-t-sm bg-primary {% if ser.peak and pt.t == ser.peak.t and pt.n %}!bg-tertiary{% endif %}" style="height:{{ [pt.pct, 2 if pt.n else 0]|max }}%" title="{% if ser.bucket == 'hour' %}{{ pt.t|dt('%d/%m %H:00') }}{% else %}{{ pt.t|date }}{% endif %}: {{ pt.n }} acesso(s), {{ pt.v }} visitante(s)"></div>{% endfor %}
+      </div>
+      <div class="flex justify-between font-label-sm text-label-sm text-outline font-mono pt-1"><span>{% if ser.bucket == 'hour' %}{{ ser.points[0].t|dt('%d/%m %H h') }}{% else %}{{ ser.points[0].t|date }}{% endif %}</span><span>agora</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. de onde -->
+<section class="card flex flex-col gap-space-md">
+  <div><h2 class="font-display text-headline-md text-on-surface flex items-center gap-2"><span class="material-symbols-outlined text-primary text-[20px]">public</span>De onde</h2><p class="font-body-sm text-body-sm text-on-surface-variant">Distribuição no período de {{ plabel[ser.period] }}.</p></div>
+  {% macro rank(title, icon, rows) %}
+  <div class="flex flex-col gap-2 p-3 rounded-lg bg-surface-container-low">
+    <span class="font-label-md text-label-md text-on-surface flex items-center gap-1"><span class="material-symbols-outlined text-[16px] text-primary">{{ icon }}</span>{{ title }}</span>
+    {% for r in rows %}
+    <div class="flex flex-col gap-1">
+      <div class="flex justify-between font-body-sm text-body-sm"><span class="text-on-surface truncate">{{ r.name if r.name is defined else r.k }}</span><span class="text-primary font-bold tabular-nums shrink-0">{{ r.pct }} % <span class="text-on-surface-variant font-normal">({{ r.n }})</span></span></div>
+      <div class="bar !h-1.5"><i style="width:{{ r.pct }}%"></i></div>
+    </div>
+    {% else %}<span class="font-body-sm text-body-sm text-outline">sem dados no período.</span>{% endfor %}
+  </div>
+  {% endmacro %}
+  {{ rank("Localidade", "location_on", org.places) }}
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-space-sm">
+    {{ rank("Como chegou", "link", org.origins) }}
+    {{ rank("Dispositivo", "devices", org.devices) }}
+    {{ rank("Navegador", "language", org.browsers) }}
+    {{ rank("Páginas mais abertas", "web", org.pages) }}
+  </div>
+  <div class="flex flex-col gap-2">
+    <div class="flex items-center justify-between"><span class="font-label-md text-label-md text-on-surface">Últimos acessos</span><span class="font-label-sm text-label-sm text-on-surface-variant">toque para ver o navegador completo</span></div>
+    {% for r in org.recent %}
+    <details class="rounded-lg bg-surface-container-high overflow-hidden">
+      <summary class="w-full flex items-center justify-between p-2.5 cursor-pointer font-body-sm text-body-sm">
+        <span class="flex items-center gap-2 min-w-0"><span class="material-symbols-outlined text-[18px] text-primary">{% if r.pwa %}install_mobile{% elif r.device == 'ios' %}phone_iphone{% elif r.device == 'android' %}smartphone{% else %}laptop{% endif %}</span><span class="font-mono text-on-surface font-semibold">{{ r.ip_masked }}</span><span class="chip !py-0 text-[10px]">{{ r.place }}</span></span>
+        <span class="flex items-center gap-1 shrink-0"><span class="font-label-sm text-label-sm text-on-surface-variant">{{ r.ts|ago }}</span><span class="material-symbols-outlined text-[16px] text-on-surface-variant">expand_more</span></span>
+      </summary>
+      <div class="px-3 pb-3 flex flex-col gap-1 font-body-sm text-body-sm text-on-surface-variant">
+        <div><span class="text-outline">página:</span> <span class="text-on-surface">{{ r.page }}</span> · <span class="text-outline">origem:</span> {{ r.origin }} · {{ r.device }} / {{ r.browser }} · {{ r.ts|dt("%d/%m %H:%M:%S") }}</div>
+        <p class="font-mono text-[11px] text-on-surface break-all bg-surface-container-lowest p-1.5 rounded">{{ r.ua }}</p>
+      </div>
+    </details>
+    {% else %}<span class="font-body-sm text-body-sm text-outline">nenhum acesso no período.</span>{% endfor %}
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+// bloco "agora": consulta a cada 15 s sem recarregar a página
+(function () {
+  const icon = d => d.pwa ? 'install_mobile' : d.device === 'ios' ? 'phone_iphone' : d.device === 'android' ? 'smartphone' : 'laptop';
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+  async function tick() {
+    try {
+      const j = await (await fetch('/admin/acessos/agora', {cache: 'no-store'})).json();
+      document.getElementById('now-n').textContent = j.n;
+      document.getElementById('now-list').innerHTML = j.visitors.length ? j.visitors.map(v => `
+        <article class="flex flex-col gap-1.5 p-3 rounded-lg bg-surface-container-high">
+          <div class="flex items-center justify-between gap-2"><div class="flex items-center gap-2 min-w-0">${v.me ? '<span class="pill-ok !py-0 uppercase">você</span>' : '<span class="dot bg-secondary shrink-0"></span>'}<span class="font-label-md text-label-md text-on-surface truncate">${esc(v.place)}</span></div><span class="font-body-sm text-body-sm text-on-surface-variant shrink-0">${esc(v.ago)}</span></div>
+          <div class="flex items-center justify-between gap-2 font-body-sm text-body-sm text-on-surface-variant"><span class="flex items-center gap-1.5 min-w-0"><span class="material-symbols-outlined text-[16px]">${icon(v)}</span><span class="truncate">${esc(v.device)} · ${esc(v.browser)}${v.pwa ? ' · app instalado' : ''}</span></span><span class="font-label-sm text-label-sm text-outline font-mono shrink-0">${esc(v.ip)}</span></div>
+          <div class="flex items-center justify-between font-label-sm text-label-sm rounded bg-surface-container-lowest/40 px-2 py-1"><span class="text-on-surface-variant">página atual</span><span class="text-on-surface font-semibold">${esc(v.page)}</span></div>
+        </article>`).join('') : '<div class="font-body-sm text-body-sm text-outline">ninguém além de você nos últimos 5 minutos.</div>';
+    } catch (e) {}
+  }
+  setInterval(tick, 15000);
+})();
+</script>
+{% endblock %}
